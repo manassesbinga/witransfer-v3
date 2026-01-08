@@ -1,0 +1,300 @@
+{
+  "companies": [
+    {
+      "id": "system",
+      "name": "WiTransfer System",
+      "isPrincipal": true,
+      "status": "active"
+    },
+    {
+      "id": "comp-001",
+      "name": "LogiTransp Brasil",
+      "isPrincipal": false,
+      "status": "active"
+    }
+  ],
+  "users": [
+    {
+      "id": "user-001",
+      "name": "Admin Geral",
+      "email": "admin@witransfer.com",
+      "password": "admin",
+      "role": "SUPER_ADMIN",
+      "companyId": "system",
+      "status": "active"
+    }
+  ],
+  "cars": [
+    {
+      "id": "1",
+      "name": "Toyota Corolla",
+      "companyId": "comp-001",
+      "status": "active",
+      "price": 85000,
+      "supplier": "Hertz",
+      "supplierLogo": "https://cdn2.rcstatic.com/images/supplier_logos/hertz_logo_lrg.gif",
+      "type": "medio",
+      "transmission": "automatico",
+      "seats": 5,
+      "availableFor": "both",
+      "locationName": "Luanda",
+      "locationType": "terminal",
+      "hasAC": true,
+      "mileage": "unlimited",
+      "fuelPolicy": "like",
+      "score": 9.2,
+      "deposit": 50000,
+      "luggage": "2 Malas Grandes",
+      "image": "https://images.unsplash.com/photo-1621007947382-bb3c3994e3fb?w=600&h=400&fit=crop&q=80",
+      "serviceTypes": [
+        "rental",
+        "transfer"
+      ]
+    },
+    {
+      "id": "2",
+      "name": "Hyundai Elantra",
+      "companyId": "comp-001",
+      "status": "active",
+      "price": 78000,
+      "supplier": "Avis",
+      "supplierLogo": "https://images.ctfassets.net/uwf0n1j71a7j/3Y2x/avis-logo.png",
+      "type": "medio",
+      "transmission": "manual",
+      "seats": 5,
+      "availableFor": "both",
+      "locationName": "Luanda",
+      "locationType": "cidade",
+      "hasAC": true,
+      "mileage": "unlimited",
+      "fuelPolicy": "like",
+      "score": 9,
+      "deposit": 45000,
+      "luggage": "2 Malas Médias",
+      "image": "https://images.unsplash.com/photo-1542367592-8849eb950fd8?w=600&h=400&fit=crop&q=80",
+      "serviceTypes": [
+        "rental",
+        "transfer"
+      ]
+    },
+    {
+      "id": "3",
+      "name": "Kia Picanto",
+      "companyId": "comp-001",
+      "status": "active",
+      "price": 55000,
+      "supplier": "Local Partner",
+      "supplierLogo": "https://dummyimage.com/100x40/cccccc/000000&text=WiTransfer",
+      "type": "pequeno",
+      "transmission": "manual",
+      "seats": 4,
+      "availableFor": "both",
+      "locationName": "Luanda",
+      "locationType": "cidade",
+      "hasAC": true,
+      "mileage": "unlimited",
+      "fuelPolicy": "like",
+      "score": 8.8,
+      "deposit": 30000,
+      "luggage": "1 Mala Grande",
+      "image": "https://images.unsplash.com/photo-1525609004556-c46c7d6cf023?w=600&h=400&fit=crop&q=80",
+      "serviceTypes": [
+        "rental",
+        "transfer"
+      ]
+    }
+  ],
+  "roles": [
+    {
+      "id": "role-001",
+      "name": "Super Admin",
+      "color": "bg-red-500",
+      "description": "Acesso total irrestrito ao sistema.",
+      "permissions": [
+        "all"
+      ],
+      "companyId": "system",
+      "type": "Default"
+    },
+    {
+      "id": "role-driver",
+      "name": "Motorista",
+      "color": "bg-blue-500",
+      "description": "Acesso apenas às suas viagens e status de veículos.",
+      "permissions": [
+        "view_trips",
+        "update_trip_status"
+      ],
+      "companyId": "system",
+      "type": "Default"
+    }
+  ],
+  "extras": [
+    {
+      "id": "driver",
+      "name": "Motorista Profissional",
+      "price": 25000,
+      "companyId": "system",
+      "perDay": true
+    },
+    {
+      "id": "gps",
+      "name": "GPS Navegação",
+      "price": 5000,
+      "companyId": "system",
+      "perDay": false
+    }
+  ],
+  "bookings": [
+    {
+      "id": "BK-7721",
+      "userName": "Carlos Alberto",
+      "userEmail": "carlos@gmail.com",
+      "carId": "1",
+      "carName": "Toyota Corolla",
+      "companyId": "comp-001",
+      "type": "rental",
+      "startDate": "2024-01-15T10:00:00Z",
+      "endDate": "2024-01-20T10:00:00Z",
+      "totalPrice": 425000,
+      "status": "confirmed",
+      "createdAt": "2024-01-10T15:30:00Z"
+    },
+    {
+      "id": "TR-1001",
+      "userName": "João Manuel",
+      "userEmail": "joao.cliente@example.com",
+      "carId": "1",
+      "carName": "Toyota Corolla",
+      "driverId": "driver-001",
+      "companyId": "comp-001",
+      "type": "transfer",
+      "pickupLocation": "Aeroporto 4 de Fevereiro",
+      "dropoffLocation": "Talatona Shopping",
+      "date": "2024-02-01T08:30:00Z",
+      "totalPrice": 15000,
+      "status": "confirmed",
+      "createdAt": "2024-01-31T18:00:00Z",
+      "updatedAt": "2026-01-04T19:41:17.312Z"
+    },
+    {
+      "id": "TR-1002",
+      "userName": "Maria Antónia",
+      "userEmail": "maria.cliente@example.com",
+      "carId": "2",
+      "carName": "Hyundai Elantra",
+      "driverId": "driver-002",
+      "companyId": "comp-001",
+      "type": "transfer",
+      "pickupLocation": "Kinaxixi",
+      "dropoffLocation": "Kilamba",
+      "date": "2024-02-01T09:15:00Z",
+      "totalPrice": 18000,
+      "status": "canceled",
+      "createdAt": "2024-01-31T19:00:00Z",
+      "updatedAt": "2026-01-04T20:10:24.203Z"
+    },
+    {
+      "id": "TR-1003",
+      "userName": "Pedro Costa",
+      "userEmail": "pedro.cliente@example.com",
+      "carId": "3",
+      "carName": "Kia Picanto",
+      "driverId": "driver-001",
+      "companyId": "comp-001",
+      "type": "transfer",
+      "pickupLocation": "Mutamba",
+      "dropoffLocation": "Benfica",
+      "date": "2024-02-01T10:00:00Z",
+      "totalPrice": 20000,
+      "status": "canceled",
+      "createdAt": "2024-01-31T20:00:00Z"
+    }
+  ],
+  "categories": [
+    {
+      "id": "pequeno",
+      "label": "Pequeno (Econômico)",
+      "description": "Carros compactos ideais para cidade.",
+      "companyId": "system"
+    },
+    {
+      "id": "medio",
+      "label": "Médio (Standard)",
+      "description": "Equilíbrio entre conforto e preço.",
+      "companyId": "system"
+    },
+    {
+      "id": "luxo",
+      "label": "Premium / Luxo",
+      "description": "Veículos de alto padrão para executivos.",
+      "companyId": "system"
+    }
+  ],
+  "states": [],
+  "motoristas": [
+    {
+      "id": "driver-001",
+      "nome": "João Manuel da Silva",
+      "nomeApelido": "João",
+      "email": "joao@witransfer.com",
+      "telefone": "923456789",
+      "telefoneAlternativo": "924556677",
+      "status": "suspenso",
+      "numeroViagens": 150,
+      "pontuacao": 4.8,
+      "ganhoTotal": 1250000,
+      "dataInicio": "2023-01-10",
+      "dataNascimento": "1985-06-15",
+      "sexo": "Masculino",
+      "nacionalidade": "Angolana",
+      "nif": "5000678912",
+      "numeroDocumento": "000556677LA044",
+      "endereco": "Rua 4, Talatona",
+      "cidade": "Luanda",
+      "provincia": "Luanda",
+      "cartaConducao": "LD-99338822",
+      "dataEmissaoCarta": "2020-01-10",
+      "dataValidadeCarta": "2030-01-10",
+      "cartaProfissional": true,
+      "experienciaAnos": 12,
+      "idiomasFalados": [
+        "Português",
+        "Inglês",
+        "Umbundu"
+      ],
+      "disponibilidade": "Ativo",
+      "turno": "Diurno",
+      "viaturaModelo": "Toyota Corolla",
+      "companyId": "comp-001",
+      "notasInternas": "Motorista muito pontual.",
+      "comportamento": "Excelente",
+      "recomendacoes": "Nenhuma",
+      "restricoesMedicas": "Nenhuma"
+    },
+    {
+      "id": "driver-002",
+      "nome": "Maria Antónia",
+      "nomeApelido": "Tónia",
+      "email": "maria@witransfer.com",
+      "telefone": "931223344",
+      "status": "disponivel",
+      "numeroViagens": 85,
+      "pontuacao": 4.9,
+      "ganhoTotal": 750000,
+      "dataInicio": "2023-05-20",
+      "dataNascimento": "1992-03-22",
+      "sexo": "Feminino",
+      "nacionalidade": "Angolana",
+      "numeroDocumento": "000443322HO011",
+      "cartaConducao": "HU-11223344",
+      "idiomasFalados": [
+        "Português",
+        "Espanhol"
+      ],
+      "disponibilidade": "Ativo",
+      "viaturaModelo": "Hyundai Elantra",
+      "companyId": "system"
+    }
+  ]
+}
