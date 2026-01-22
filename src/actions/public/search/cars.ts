@@ -357,7 +357,7 @@ function calculateCarPricing(
   };
 }
 
-async function searchCarsInternal(filters: SearchFilters): Promise<SearchResponse> {
+export async function searchCarsInternal(filters: SearchFilters): Promise<SearchResponse> {
   console.log('🔎 [SEARCH] Iniciando pesquisa com filtros:', JSON.stringify(filters));
   console.log(`🔎 [SEARCH] Paginação: offset=${filters.offset}, limit=${filters.limit}`);
 

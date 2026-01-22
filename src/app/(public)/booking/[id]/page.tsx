@@ -90,29 +90,31 @@ export default function BookingDetailsPage() {
       setIsRecalculating(true);
       try {
         const rawId = Array.isArray(id) ? id[0] : id;
-        const carIds = rawId.split(",").filter(Boolean);
-        const updatedCars = await getCarsByIds(carIds, updatedCtx);
-        setCars(updatedCars);
-        try { await fetchExtrasForCars(updatedCars); } catch (e) { }
+        if (typeof rawId === "string") {
+          const carIds = rawId.split(",").filter(Boolean);
+          const updatedCars = await getCarsByIds(carIds, updatedCtx);
+          setCars(updatedCars);
+          try { await fetchExtrasForCars(updatedCars); } catch (e) { }
 
-        // Update draft in sessionStorage
-        const did = searchParams.get("did");
-        if (did) {
-          const stored = sessionStorage.getItem(did);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            // Ensure search context is preserved
-            parsed.search = { ...(parsed.search || {}), ...updatedCtx };
-            // Update summaries with new prices
-            parsed.summaries = updatedCars.map(c => ({
-              id: c.id,
-              totalPrice: c.totalPrice,
-              baseTotal: c.baseTotal,
-              extrasTotal: c.extrasTotal,
-            }));
-            sessionStorage.setItem(did, JSON.stringify(parsed));
-            // Also update the global last_search for consistency if the user goes back
-            sessionStorage.setItem("witransfer_last_search", JSON.stringify(parsed.search));
+          // Update draft in sessionStorage
+          const did = searchParams.get("did");
+          if (did) {
+            const stored = sessionStorage.getItem(did);
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              // Ensure search context is preserved
+              parsed.search = { ...(parsed.search || {}), ...updatedCtx };
+              // Update summaries with new prices
+              parsed.summaries = updatedCars.map((c: any) => ({
+                id: c.id,
+                totalPrice: c.totalPrice,
+                baseTotal: c.baseTotal,
+                extrasTotal: c.extrasTotal,
+              }));
+              sessionStorage.setItem(did, JSON.stringify(parsed));
+              // Also update the global last_search for consistency if the user goes back
+              sessionStorage.setItem("witransfer_last_search", JSON.stringify(parsed.search));
+            }
           }
         }
       } catch (err) {
@@ -215,6 +217,32 @@ export default function BookingDetailsPage() {
     }
   };
 
+  async function fetchExtrasForCars(loadedCars: any[]) {
+    try {
+      const vehicleIds = Array.from(new Set(loadedCars.map((c) => c.id).filter(Boolean)));
+      const partnerIds = Array.from(new Set(loadedCars.map((c) => c.partnerId || c.partner_id).filter(Boolean)));
+      const extrasMap: Record<string, any> = {};
+
+      await Promise.all(vehicleIds.map(async (vid) => {
+        try {
+          const ev = await getExtras({ vehicleId: vid });
+          (ev || []).forEach((e: any) => { extrasMap[e.id] = e; });
+        } catch (e) { }
+      }));
+
+      await Promise.all(partnerIds.map(async (pid) => {
+        try {
+          const ep = await getExtras({ partnerId: pid });
+          (ep || []).forEach((e: any) => { extrasMap[e.id] = e; });
+        } catch (e) { }
+      }));
+
+      setExtras(Object.values(extrasMap));
+    } catch (e) {
+      console.error('Erro ao buscar extras para a reserva', e);
+    }
+  }
+
   useEffect(() => {
     async function syncAuth() {
       if (typeof window !== "undefined") {
@@ -249,6 +277,7 @@ export default function BookingDetailsPage() {
     }
     syncAuth();
   }, []);
+
 
   useEffect(() => {
     async function loadData() {
@@ -319,7 +348,7 @@ export default function BookingDetailsPage() {
           console.log("🔍 summaries:", draft.summaries);
           console.log("🔍 ==========================================");
           // Handle optimized draft structure (carIds + summaries)
-            if (Array.isArray(draft.carIds) && draft.carIds.length > 0) {
+          if (Array.isArray(draft.carIds) && draft.carIds.length > 0) {
             const fetchedCars = await getCarsByIds(draft.carIds);
             const enhancedCars = fetchedCars.map(car => {
               const summary = (draft.summaries || []).find((s: any) => s.id === car.id);
@@ -355,7 +384,7 @@ export default function BookingDetailsPage() {
               luggage: draft.luggage,
             };
             // Filter out null values to ensure they're not displayed as "null" in UI
-            const cleanCtx = Object.fromEntries(
+            const cleanCtx: any = Object.fromEntries(
               Object.entries(ctx).filter(([_, v]) => v !== null && v !== undefined)
             );
             setSearchContext(cleanCtx as SearchFilters);
@@ -491,7 +520,7 @@ export default function BookingDetailsPage() {
   }
 
   const calculateTotal = () => {
-    return cars.reduce((total, car) => total + (car.totalPrice || 0), 0);
+    return cars.reduce((total: number, car: Car) => total + (car.totalPrice || 0), 0);
   };
 
   const finalTotal = calculateTotal();
@@ -991,10 +1020,10 @@ export default function BookingDetailsPage() {
 
                           return (
                             <motion.div
+                              {...{ className: "flex justify-between items-center text-[11px] font-bold py-1" } as any}
                               key={`included-${car.id}-${ex.id}`}
                               initial={{ opacity: 0, x: 10 }}
                               animate={{ opacity: 1, x: 0 }}
-                              className="flex justify-between items-center text-[11px] font-bold py-1"
                             >
                               <div className="flex items-center gap-2">
                                 <span className="w-1.5 h-1.5 rounded-none bg-blue-400"></span>

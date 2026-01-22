@@ -19,11 +19,11 @@ export * from "./catalog/actions";
 // Client actions
 export * from "./clients/actions";
 
-// Driver actions
-export * from "./drivers/actions";
+// Driver actions (temporarily disabled until directory exists)
+// export * from "./drivers/actions";
 
-// Financial actions
-export * from "./financial/actions";
+// Financial actions (temporarily disabled until directory exists)
+// export * from "./financial/actions";
 
 // Partner actions
 export * from "./partners/actions";

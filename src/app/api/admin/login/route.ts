@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { comparePassword, createToken } from "@/lib/auth";
+import { comparePassword } from "@/lib/hashing";
+import { createToken } from "@/lib/auth";
 
 export async function POST(request: Request) {
   try {

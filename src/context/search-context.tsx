@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 interface SearchState {
@@ -52,18 +52,6 @@ export function SearchProvider({
   });
 
   const [isLoading, setIsLoading] = useState(false);
-  const searchParams = useSearchParams();
-
-  // Sync with URL Type param immediately if it changes (Navigation Tabs)
-  useEffect(() => {
-    const typeParam = searchParams.get("type");
-    if (typeParam && (typeParam === "rental" || typeParam === "transfer")) {
-      // Only update if different to avoid loop
-      if (data.type !== typeParam) {
-        _setData((prev) => ({ ...prev, type: typeParam }));
-      }
-    }
-  }, [searchParams]);
 
   const setData = (newData: Partial<SearchState>) => {
     _setData((prev) => ({ ...prev, ...newData }));
@@ -71,9 +59,27 @@ export function SearchProvider({
 
   return (
     <SearchContext.Provider value={{ data, setData, isLoading, setIsLoading }}>
+      <Suspense fallback={null}>
+        <SearchSync onSync={(type) => {
+          if (data.type !== type) {
+            _setData((prev) => ({ ...prev, type: type as "rental" | "transfer" }));
+          }
+        }} />
+      </Suspense>
       {children}
     </SearchContext.Provider>
   );
+}
+
+function SearchSync({ onSync }: { onSync: (type: string) => void }) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const typeParam = searchParams.get("type");
+    if (typeParam && (typeParam === "rental" || typeParam === "transfer")) {
+      onSync(typeParam);
+    }
+  }, [searchParams, onSync]);
+  return null;
 }
 
 export function useSearch() {

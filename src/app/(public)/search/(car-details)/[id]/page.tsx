@@ -1,4 +1,5 @@
 "use client";
+export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -74,63 +75,63 @@ export default function DealPage() {
   useEffect(() => {
     async function loadData() {
       try {
-          const rawId = Array.isArray(id) ? id[0] : id;
-          const decodedId = decodeURIComponent(rawId);
-          const ids = decodedId
-            .split(",")
-            .map((part) => part.trim())
-            .filter(Boolean);
+        const rawId = Array.isArray(id) ? id[0] : id;
+        if (!rawId) return;
+        const decodedId = decodeURIComponent(rawId);
+        const ids = decodedId
+          .split(",")
+          .map((part) => part.trim())
+          .filter(Boolean);
 
-          const response = await searchCars({
-            ids,
-            type: searchType,
-            from: fromDateParam || undefined,
-            to: toDateParam || undefined,
-            pickup: searchParams.get("pickup") || undefined,
-            dropoff: searchParams.get("dropoff") || undefined,
-            passengers: searchParams.get("passengers") || undefined,
-            luggage: searchParams.get("luggage") || undefined,
-          });
+        const response = await searchCars({
+          ids,
+          type: searchType,
+          from: fromDateParam || undefined,
+          to: toDateParam || undefined,
+          pickup: searchParams.get("pickup") || undefined,
+          dropoff: searchParams.get("dropoff") || undefined,
+          passengers: searchParams.get("passengers") || undefined,
+          luggage: searchParams.get("luggage") || undefined,
+        });
 
-          if (response && response.results && response.results.length > 0) {
-            setCars(response.results);
-            setSelectedCarId(response.results[0].id);
+        if (response && response.results && response.results.length > 0) {
+          setCars(response.results);
+          setSelectedCarId(response.results[0].id);
 
-            const initialExtras: Record<string, number> = {};
-            response.results.forEach((car) => {
-              car.extras?.forEach((extraId: string) => {
-                initialExtras[`${car.id}-${extraId}`] = 1;
-              });
+          const initialExtras: Record<string, number> = {};
+          response.results.forEach((car) => {
+            car.extras?.forEach((extraId: string) => {
+              initialExtras[`${car.id}-${extraId}`] = 1;
             });
-            setSelectedExtras(initialExtras);
+          });
+          setSelectedExtras(initialExtras);
 
-            // Fetch extras for the loaded cars: vehicle-specific and partner-level
-            try {
-              const vehicleIds = Array.from(new Set(response.results.map((c: any) => c.id).filter(Boolean)));
-              const partnerIds = Array.from(new Set(response.results.map((c: any) => c.partnerId || c.partner_id).filter(Boolean)));
+          // Fetch extras for the loaded cars: vehicle-specific and partner-level
+          try {
+            const vehicleIds = Array.from(new Set(response.results.map((c: any) => c.id).filter(Boolean)));
+            const partnerIds = Array.from(new Set(response.results.map((c: any) => c.partnerId || c.partner_id).filter(Boolean)));
 
-              const extrasMap: Record<string, Extra> = {};
+            const extrasMap: Record<string, Extra> = {};
 
-              // vehicle-specific extras
-              await Promise.all(vehicleIds.map(async (vid) => {
-                try {
-                  const ev = await getExtras({ vehicleId: vid });
-                  (ev || []).forEach((e: Extra) => { extrasMap[e.id] = e; });
-                } catch (e) { /* ignore per-vehicle failures */ }
-              }));
+            // vehicle-specific extras
+            await Promise.all(vehicleIds.map(async (vid) => {
+              try {
+                const ev = await getExtras({ vehicleId: vid });
+                (ev || []).forEach((e: Extra) => { extrasMap[e.id] = e; });
+              } catch (e) { /* ignore per-vehicle failures */ }
+            }));
 
-              // partner-level extras
-              await Promise.all(partnerIds.map(async (pid) => {
-                try {
-                  const ep = await getExtras({ partnerId: pid });
-                  (ep || []).forEach((e: Extra) => { extrasMap[e.id] = e; });
-                } catch (e) { /* ignore per-partner failures */ }
-              }));
+            // partner-level extras
+            await Promise.all(partnerIds.map(async (pid) => {
+              try {
+                const ep = await getExtras({ partnerId: pid });
+                (ep || []).forEach((e: Extra) => { extrasMap[e.id] = e; });
+              } catch (e) { /* ignore per-partner failures */ }
+            }));
 
-              setExtras(Object.values(extrasMap));
-            } catch (e) {
-              console.error("Erro ao buscar extras para veículos:", e);
-            }
+            setExtras(Object.values(extrasMap));
+          } catch (e) {
+            console.error("Erro ao buscar extras para veículos:", e);
           }
         }
       } catch (error) {
@@ -337,120 +338,120 @@ export default function DealPage() {
                     )}
                   >
                     {/* Imagem Banner */}
-                  <div className="relative h-32 bg-slate-100 overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent z-10" />
-                    <img
-                      src={car.image || "/car-placeholder.png"}
-                      alt={car.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    
-                    {/* Badge de Disponibilidade */}
-                    <div className="absolute top-3 left-3 z-20">
-                      <Badge className="bg-slate-900 text-white font-bold px-3 py-1 uppercase text-xs">
-                        Disponível
-                      </Badge>
+                    <div className="relative h-32 bg-slate-100 overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent z-10" />
+                      <img
+                        src={car.image || "/car-placeholder.png"}
+                        alt={car.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+
+                      {/* Badge de Disponibilidade */}
+                      <div className="absolute top-3 left-3 z-20">
+                        <Badge className="bg-slate-900 text-white font-bold px-3 py-1 uppercase text-xs">
+                          Disponível
+                        </Badge>
+                      </div>
+
+                      {/* Categoria Badge */}
+                      <div className="absolute bottom-3 right-3 z-20">
+                        <Badge className="bg-blue-600 text-white font-bold px-3 py-1 uppercase text-xs">
+                          {car.category || car.type}
+                        </Badge>
+                      </div>
                     </div>
 
-                    {/* Categoria Badge */}
-                    <div className="absolute bottom-3 right-3 z-20">
-                      <Badge className="bg-blue-600 text-white font-bold px-3 py-1 uppercase text-xs">
-                        {car.category || car.type}
-                      </Badge>
+                    {/* Conteúdo */}
+                    <div className="p-5">
+                      {/* Título e Rating */}
+                      <div className="mb-4">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <h3 className="text-xl font-bold text-slate-900 leading-tight">
+                            {car.name}
+                          </h3>
+                          <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-md">
+                            <Star size={14} className="fill-yellow-400 text-yellow-400" />
+                            <span className="text-xs font-bold text-slate-700">4.9</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-slate-500 uppercase font-bold">{car.supplier || "WiTransfer Partner"}</p>
+                      </div>
+
+                      {/* Badges de Tipo */}
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-xs font-bold uppercase">
+                          {car.transmission === 'automatic' ? 'Automático' : 'Manual'}
+                        </Badge>
+                        <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-xs font-bold uppercase">
+                          {car.seats} Lugares
+                        </Badge>
+                      </div>
+
+                      {/* Especificações Grid */}
+                      <div className="grid grid-cols-2 gap-3 mb-4 pb-4 border-b border-slate-200">
+                        <div className="flex items-center gap-2 text-xs">
+                          <Users size={14} className="text-slate-500" />
+                          <span className="text-slate-700 font-medium">{car.seats} Lugares</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <Zap size={14} className="text-slate-500" />
+                          <span className="text-slate-700 font-medium">{car.transmission === 'automatic' ? 'Automático' : 'Manual'}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <Luggage size={14} className="text-slate-500" />
+                          <span className="text-slate-700 font-medium">{car.luggage_big || 0} Malas</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <MapPin size={14} className="text-slate-500" />
+                          <span className="text-slate-700 font-medium">{searchType === "transfer" ? (car.distanceString || "S/D") : "Ilimitada"}</span>
+                        </div>
+                      </div>
+
+                      {/* Serviços Inclusos */}
+                      {car.includedServices && car.includedServices.length > 0 && (
+                        <div className="mb-4 pb-4 border-b border-slate-200">
+                          <p className="text-xs font-bold text-slate-600 uppercase mb-2">Serviços Inclusos</p>
+                          <div className="flex flex-wrap gap-1">
+                            {car.includedServices.slice(0, 4).map((service, idx) => (
+                              <Badge key={idx} className="bg-green-50 text-green-700 border border-green-200 text-xs font-semibold px-2 py-0.5">
+                                <Check size={10} className="mr-1" /> {service}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Preço e Ação */}
+                      <div className="flex items-end justify-between">
+                        <div>
+                          <p className="text-xs text-slate-500 uppercase font-bold mb-1">Taxa Diária</p>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-black text-slate-900">
+                              {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(car.pricePerUnit || 0)}
+                            </span>
+                            <span className="text-xs text-slate-500 font-bold uppercase">
+                              / {car.billingType === 'per_km' ? 'KM' : car.billingType === 'per_day' ? 'DIA' : 'UNID'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-1 font-medium">
+                            Total: <span className="font-bold text-primary">{new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(car.price)}</span>
+                          </p>
+                        </div>
+                        <button
+                          className={cn(
+                            "px-4 py-3 rounded-lg font-bold text-sm flex items-center gap-2 transition-all whitespace-nowrap",
+                            selectedCarId === car.id
+                              ? "bg-primary text-white"
+                              : "bg-slate-900 text-white hover:bg-slate-800"
+                          )}
+                        >
+                          {selectedCarId === car.id ? "Selecionado" : "Selecionar"}
+                          <ArrowRight size={16} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Conteúdo */}
-                  <div className="p-5">
-                    {/* Título e Rating */}
-                    <div className="mb-4">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <h3 className="text-xl font-bold text-slate-900 leading-tight">
-                          {car.name}
-                        </h3>
-                        <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-md">
-                          <Star size={14} className="fill-yellow-400 text-yellow-400" />
-                          <span className="text-xs font-bold text-slate-700">4.9</span>
-                        </div>
-                      </div>
-                      <p className="text-xs text-slate-500 uppercase font-bold">{car.supplier || "WiTransfer Partner"}</p>
-                    </div>
-
-                    {/* Badges de Tipo */}
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-xs font-bold uppercase">
-                        {car.transmission === 'automatic' ? 'Automático' : 'Manual'}
-                      </Badge>
-                      <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-xs font-bold uppercase">
-                        {car.seats} Lugares
-                      </Badge>
-                    </div>
-
-                    {/* Especificações Grid */}
-                    <div className="grid grid-cols-2 gap-3 mb-4 pb-4 border-b border-slate-200">
-                      <div className="flex items-center gap-2 text-xs">
-                        <Users size={14} className="text-slate-500" />
-                        <span className="text-slate-700 font-medium">{car.seats} Lugares</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs">
-                        <Zap size={14} className="text-slate-500" />
-                        <span className="text-slate-700 font-medium">{car.transmission === 'automatic' ? 'Automático' : 'Manual'}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs">
-                        <Luggage size={14} className="text-slate-500" />
-                        <span className="text-slate-700 font-medium">{car.luggage_big || 0} Malas</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs">
-                        <MapPin size={14} className="text-slate-500" />
-                        <span className="text-slate-700 font-medium">{searchType === "transfer" ? (car.distanceString || "S/D") : "Ilimitada"}</span>
-                      </div>
-                    </div>
-
-                    {/* Serviços Inclusos */}
-                    {car.includedServices && car.includedServices.length > 0 && (
-                      <div className="mb-4 pb-4 border-b border-slate-200">
-                        <p className="text-xs font-bold text-slate-600 uppercase mb-2">Serviços Inclusos</p>
-                        <div className="flex flex-wrap gap-1">
-                          {car.includedServices.slice(0, 4).map((service, idx) => (
-                            <Badge key={idx} className="bg-green-50 text-green-700 border border-green-200 text-xs font-semibold px-2 py-0.5">
-                              <Check size={10} className="mr-1" /> {service}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Preço e Ação */}
-                    <div className="flex items-end justify-between">
-                      <div>
-                        <p className="text-xs text-slate-500 uppercase font-bold mb-1">Taxa Diária</p>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-2xl font-black text-slate-900">
-                            {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(car.pricePerUnit || 0)}
-                          </span>
-                          <span className="text-xs text-slate-500 font-bold uppercase">
-                            / {car.billingType === 'per_km' ? 'KM' : car.billingType === 'per_day' ? 'DIA' : 'UNID'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-600 mt-1 font-medium">
-                          Total: <span className="font-bold text-primary">{new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(car.price)}</span>
-                        </p>
-                      </div>
-                      <button
-                        className={cn(
-                          "px-4 py-3 rounded-lg font-bold text-sm flex items-center gap-2 transition-all whitespace-nowrap",
-                          selectedCarId === car.id
-                            ? "bg-primary text-white"
-                            : "bg-slate-900 text-white hover:bg-slate-800"
-                        )}
-                      >
-                        {selectedCarId === car.id ? "Selecionado" : "Selecionar"}
-                        <ArrowRight size={16} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                ))}
               </div>
             ) : (
               // LIST VIEW - Linhas finas

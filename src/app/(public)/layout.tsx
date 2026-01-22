@@ -1,5 +1,6 @@
 "use client";
 
+import React, { Suspense } from "react";
 import { Header } from "@/components/header/public";
 import { usePathname } from "next/navigation";
 import { Footer } from "@/components";
@@ -13,10 +14,13 @@ export default function HomeLayout({
   return (
     <div className="min-h-screen bg-white">
       <SearchProvider>
-        <Header transparent={isTransparentPage} />
+        <Suspense fallback={<div className="h-20 bg-[#003580] animate-pulse" />}>
+          <Header transparent={isTransparentPage} />
+        </Suspense>
         <main className="w-full">
-          {children}
-
+          <Suspense fallback={<div className="flex items-center justify-center p-20">Loading...</div>}>
+            {children}
+          </Suspense>
           <Footer />
         </main>
       </SearchProvider>

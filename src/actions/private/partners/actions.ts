@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { revalidatePath } from "next/cache"
 import type { PartnerFormData, ActionResult as PartnerActionResult } from "@/types"
 import { actionMiddleware } from "@/middlewares/actions/action-factory"
-import { hashPassword } from "@/lib/auth"
+import { hashPassword } from "@/lib/hashing"
 import { getAdminSessionInternal } from "../session"
 
 export async function registerPartnerAction(

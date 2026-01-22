@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { SearchForm } from "@/components/search/form";
 import { SearchPageContent } from "@/components/search/content";
 import React, { Suspense } from "react";

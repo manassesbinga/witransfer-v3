@@ -1,4 +1,5 @@
 "use client";
+export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -130,7 +131,7 @@ export default function CheckoutPage() {
           luggage: draft.luggage,
         };
         // Filter out null values
-        const cleanCtx = Object.fromEntries(
+        const cleanCtx: any = Object.fromEntries(
           Object.entries(ctx).filter(([_, v]) => v !== null && v !== undefined)
         );
         if (Object.keys(cleanCtx).length > 0 && (cleanCtx.pickup || cleanCtx.from)) {
@@ -150,11 +151,11 @@ export default function CheckoutPage() {
             if (summary) return { ...car, totalPrice: summary.totalPrice, baseTotal: summary.baseTotal, extrasTotal: summary.extrasTotal };
             return car;
           });
-            setCars(enhancedCars);
-            try { await fetchExtrasForCars(enhancedCars); } catch (e) { }
+          setCars(enhancedCars);
+          try { await fetchExtrasForCars(enhancedCars); } catch (e) { }
         } else if (Array.isArray(draft.offers) && draft.offers.length > 0) {
-            setCars(draft.offers as any[]);
-            try { await fetchExtrasForCars(draft.offers as any[]); } catch (e) { }
+          setCars(draft.offers as any[]);
+          try { await fetchExtrasForCars(draft.offers as any[]); } catch (e) { }
         }
       } else {
         // Handle no-draft fallback (direct IDs in URL)
@@ -204,7 +205,7 @@ export default function CheckoutPage() {
 
   const calculateTotal = () => {
     // Preços já vêm calculados do servidor - apenas somar
-    return cars.reduce((total, car) => total + ((car as any).totalPrice || 0), 0);
+    return cars.reduce((total: number, car: Car) => total + ((car as any).totalPrice || 0), 0);
   };
 
   const handleBook = async () => {

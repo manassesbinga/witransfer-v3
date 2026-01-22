@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { PartnerForm } from "@/components"
 import { registerPartnerAction } from "@/actions"
 import type { PartnerFormData } from "@/types"
