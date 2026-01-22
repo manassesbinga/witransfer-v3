@@ -1,3 +1,5 @@
+/** @format */
+// Version: 1.0.1 - Fixed static config for Vercel
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
