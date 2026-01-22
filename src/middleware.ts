@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
   middleware as routingMiddleware,
-  config as routingConfig,
 } from "./middlewares/middleware";
 
 /**
@@ -16,4 +15,13 @@ export function middleware(request: NextRequest) {
 }
 
 // Export the config from the dedicated middleware file
-export const config = routingConfig;
+export const config = {
+  matcher: [
+    "/admin/:path*",
+    "/partners/:path*",
+    "/login",
+    "/fleet/:path*",
+    "/operations/:path*",
+    "/finance/:path*",
+  ],
+};
