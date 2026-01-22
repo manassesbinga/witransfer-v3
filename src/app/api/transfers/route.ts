@@ -1,17 +1,5 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-
-const DB_PATH = path.join(process.cwd(), "src/data/db.json");
-
-function getDb() {
-  const data = fs.readFileSync(DB_PATH, "utf-8");
-  return JSON.parse(data);
-}
-
-function saveDb(data: any) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), "utf-8");
-}
+import { supabase } from "@/lib/supabase";
 
 export async function POST(request: Request) {
   try {
@@ -25,47 +13,53 @@ export async function POST(request: Request) {
       );
     }
 
-    const db = getDb();
-
     // 1. Verificar se o usuário já existe
-    let user = db.users.find(
-      (u: any) => u.email.toLowerCase() === email.toLowerCase(),
-    );
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email.toLowerCase())
+      .single();
+
+    let currentUser = user;
     let userCreated = false;
 
     if (!user) {
       // 2. Criar usuário se não existir
-      user = {
-        id: `USR-${Math.random().toString(36).substring(2, 11).toUpperCase()}`,
-        email,
-        firstName,
-        lastName,
-        phone,
-        createdAt: new Date().toISOString(),
-      };
-      db.users.push(user);
+      const { data: newUser, error: createError } = await supabase
+        .from("users")
+        .insert([{
+          email: email.toLowerCase(),
+          first_name: firstName,
+          last_name: lastName,
+          phone,
+          created_at: new Date().toISOString(),
+        }])
+        .select()
+        .single();
+
+      if (createError) throw createError;
+      currentUser = newUser;
       userCreated = true;
     }
 
     // 3. Criar viagem/transfer
-    const newTransfer = {
-      id: `TRF-${Math.random().toString(36).substring(2, 11).toUpperCase()}`,
-      userId: user.id,
-      ...transferData,
-      customerEmail: email,
-      customerName: `${firstName} ${lastName}`,
-      status: "pending",
-      type: "transfer",
-      createdAt: new Date().toISOString(),
-    };
+    const { data: newTransfer, error: transferError } = await supabase
+      .from("bookings")
+      .insert([{
+        user_id: currentUser.id,
+        ...transferData,
+        customer_email: email,
+        customer_name: `${firstName} ${lastName}`,
+        status: "pending",
+        type: "transfer",
+        created_at: new Date().toISOString(),
+      }])
+      .select()
+      .single();
 
-    // Adicionar à lista de bookings (transfers são um tipo de booking)
-    db.bookings.push(newTransfer);
+    if (transferError) throw transferError;
 
-    // 4. Salvar no DB
-    saveDb(db);
-
-    // 5. Enviar email de confirmação
+    // 4. Enviar email de confirmação
     try {
       await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/send-email`,
@@ -86,17 +80,16 @@ export async function POST(request: Request) {
       );
     } catch (emailError) {
       console.error("Erro ao enviar email:", emailError);
-      // Não falhar a reserva se o email falhar
     }
 
     return NextResponse.json({
       success: true,
       transfer: newTransfer,
       user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        id: currentUser.id,
+        email: currentUser.email,
+        firstName: currentUser.first_name,
+        lastName: currentUser.last_name,
       },
       userCreated,
       message: userCreated
@@ -117,19 +110,20 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
 
-    const db = getDb();
+    let query = supabase
+      .from("bookings")
+      .select("*")
+      .eq("type", "transfer");
 
     if (userId) {
-      // Retornar viagens de um usuário específico
-      const userTransfers = db.bookings.filter(
-        (b: any) => b.userId === userId && b.type === "transfer",
-      );
-      return NextResponse.json({ transfers: userTransfers });
+      query = query.eq("user_id", userId);
     }
 
-    // Retornar todas as viagens
-    const allTransfers = db.bookings.filter((b: any) => b.type === "transfer");
-    return NextResponse.json({ transfers: allTransfers });
+    const { data: transfers, error } = await query;
+
+    if (error) throw error;
+
+    return NextResponse.json({ transfers });
   } catch (error) {
     console.error("Erro ao buscar viagens:", error);
     return NextResponse.json(

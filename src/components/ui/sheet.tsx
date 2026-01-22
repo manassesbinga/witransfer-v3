@@ -7,13 +7,13 @@ import { XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />;
+  return <SheetPrimitive.Root data-slot="sheet" suppressHydrationWarning {...props} />;
 }
 
 function SheetTrigger({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
-  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />;
+  return <SheetPrimitive.Trigger data-slot="sheet-trigger" suppressHydrationWarning {...props} />;
 }
 
 function SheetClose({

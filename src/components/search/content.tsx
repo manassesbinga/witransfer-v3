@@ -2,11 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { FilterSidebar } from "@/components/search/sidebar";
-import { FilterSidebarSkeleton } from "@/components/skeletons/sidebar";
-import { CarResults } from "@/components/search/results";
-import { CarResultsSkeleton } from "@/components/skeletons/results";
+import { FilterSidebar, CarResults } from "@/components";
 import { BackToTop } from "@/components/ui/back-to-top";
+import { SearchFilters, SearchResponse, Supplier, Category, SystemData } from "@/types";
+import { Loader2 } from "lucide-react";
 
 export function SearchPageContent({
   defaultType,
@@ -15,9 +14,9 @@ export function SearchPageContent({
   initialSystemData,
 }: {
   defaultType?: "rental" | "transfer";
-  initialSearchData?: any;
-  initialResults?: any;
-  initialSystemData?: any;
+  initialSearchData?: SearchFilters;
+  initialResults?: SearchResponse | null;
+  initialSystemData?: SystemData | null;
 }) {
   const [isLoading, setIsLoading] = useState(
     !initialSearchData && !initialResults,
@@ -25,14 +24,17 @@ export function SearchPageContent({
   const [facets, setFacets] = useState<Record<string, Record<string, number>>>(
     initialResults?.facets || {},
   );
-  const [suppliers, setSuppliers] = useState<any[]>(
+  const [suppliers, setSuppliers] = useState<Supplier[]>(
     initialResults?.suppliers || [],
   );
 
   // Se tiver dados iniciais do servidor, usa direto
-  const [searchData, setSearchData] = useState<any>(initialSearchData || null);
-  const [categoriesData, setCategoriesData] = useState<any[]>(
+  const [searchData, setSearchData] = useState<SearchFilters>(initialSearchData || {});
+  const [categoriesData, setCategoriesData] = useState<Category[]>(
     initialSystemData?.categories || [],
+  );
+  const [extrasData, setExtrasData] = useState<any[]>(
+    initialSystemData?.extras || [],
   );
 
   const searchParams = useSearchParams();
@@ -47,6 +49,7 @@ export function SearchPageContent({
         try {
           const systemData = await getSystemData();
           setCategoriesData(systemData.categories);
+          setExtrasData(systemData.extras);
         } catch (e) {
           console.error("Failed to load system data:", e);
         }
@@ -56,7 +59,7 @@ export function SearchPageContent({
       // Mas para o primeiro load, initialSearchData é suficiente.
       // Contudo, se s mudar via navegação client-side, precisamos ouvir searchParams.
 
-      let data: any = initialSearchData || {};
+      let data: SearchFilters = initialSearchData || {};
 
       // If compressed state present in `s` param, prefer it (client navigation)
       const s = searchParams.get("s");
@@ -77,19 +80,42 @@ export function SearchPageContent({
       // ... resto da lógica de fallback sid e legacy ...
       if (!data || Object.keys(data).length === 0) {
         // ... fallback logic ...
+        const did = searchParams.get("did");
         const sid = searchParams.get("sid");
-        if (sid) {
-          // ...
+        const fallbackId = did || sid;
+
+        if (fallbackId) {
           try {
-            const stored = sessionStorage.getItem(sid);
-            if (stored) data = JSON.parse(stored);
-          } catch (e) {}
+            const stored = sessionStorage.getItem(fallbackId);
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              // Draft could be { search: ... } or just the filters
+              data = parsed.search || parsed;
+              console.log("✅ [CONTENT] Loaded filters from sessionStorage:", fallbackId);
+            }
+          } catch (e) {
+            console.warn("Failed to load draft from sessionStorage:", e);
+          }
         }
-        // legacy params
+
+        // legacy params directly from URL
         if (!data || Object.keys(data).length === 0) {
           searchParams.forEach((val, key) => {
-            data[key] = val;
+            (data as any)[key] = val;
           });
+        }
+
+        // FINAL FALLBACK: check for last search in sessionStorage (essential for "Back" button)
+        if (!data || Object.keys(data).length === 0 || !data.pickup) {
+          try {
+            const lastSearch = sessionStorage.getItem("witransfer_last_search");
+            if (lastSearch) {
+              data = JSON.parse(lastSearch);
+              console.log("✅ [CONTENT] Recovered state from witransfer_last_search");
+            }
+          } catch (e) {
+            console.warn("Failed to recover last search:", e);
+          }
         }
       }
 
@@ -111,34 +137,41 @@ export function SearchPageContent({
     <>
       <div className="flex-grow relative">
         <main className="flex-grow relative">
-          {isLoading ? (
-            <div className="w-full pl-[20px] pr-2 md:pr-4 py-6">
-              <div className="flex flex-col lg:flex-row gap-4">
-                <FilterSidebarSkeleton />
-                <CarResultsSkeleton />
+          <div className="w-full py-8 px-4 md:px-6">
+            <div className="max-w-[1400px] mx-auto">
+              <div className="flex flex-col-reverse lg:flex-row gap-6 lg:gap-8">
+                <div className="flex-1 min-w-0">
+                  {isLoading ? (
+                    <div className="w-full flex flex-col items-center justify-center py-24 text-slate-400 gap-4">
+                      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                      <p className="font-bold tracking-[0.2em] text-xs">Sincronizando Pesquisa...</p>
+                    </div>
+                  ) : (
+                    <CarResults
+                      searchData={searchData}
+                      initialResults={initialResults}
+                      facets={facets}
+                      suppliers={suppliers}
+                      categoriesData={categoriesData}
+                      extrasData={extrasData}
+                      onDataChange={(data) => {
+                        setFacets(data.facets);
+                        setSuppliers(data.suppliers);
+                      }}
+                    />
+                  )}
+                </div>
+                <div className="w-full lg:w-auto lg:flex-shrink-0">
+                  <FilterSidebar
+                    facets={facets}
+                    suppliers={suppliers}
+                    categoriesData={categoriesData}
+                    extrasData={extrasData}
+                  />
+                </div>
               </div>
             </div>
-          ) : (
-            <div className="w-full pl-[20px] pr-2 md:pr-4 py-6">
-              <div className="flex flex-col lg:flex-row gap-4">
-                <FilterSidebar
-                  facets={facets}
-                  suppliers={suppliers}
-                  categoriesData={categoriesData}
-                />
-                <CarResults
-                  searchData={searchData}
-                  initialResults={initialResults}
-                  facets={facets}
-                  suppliers={suppliers}
-                  onDataChange={(data) => {
-                    setFacets(data.facets);
-                    setSuppliers(data.suppliers);
-                  }}
-                />
-              </div>
-            </div>
-          )}
+          </div>
         </main>
         <BackToTop />
       </div>

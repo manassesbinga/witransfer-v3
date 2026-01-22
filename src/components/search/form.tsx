@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Calendar as CalendarIcon,
@@ -23,62 +23,50 @@ import { cn } from "@/lib/utils";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "sonner";
 
-import { encodeState, decodeState } from "@/lib/url-state";
+import { createDraftAction } from "@/actions/public/drafts";
+import { SearchFilters } from "@/types";
 // local state
 
 interface SearchFormProps {
   type: "rental" | "transfer";
-  initialData?: any;
+  initialData?: SearchFilters;
 }
 
 export function SearchForm({ type, initialData }: SearchFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const prefersReducedMotion = useReducedMotion();
 
-  // Decodifica o estado da URL se existir
-  const getDecodedState = () => {
-    const s = searchParams.get("s");
-    if (s) return decodeState(s);
+  // No longer read compressed state from URL or sessionStorage; we rely
+  // on server-side drafts (`did`) to pass search state between pages.
+  const getDecodedState = () => null;
 
-    const sid = searchParams.get("sid");
-    if (sid) {
-      try {
-        const stored = sessionStorage.getItem(sid);
-        if (stored) return JSON.parse(stored);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return null;
-  };
-
-  const decodedState = getDecodedState();
-  const mergedData = { ...decodedState, ...initialData };
+  const mergedData = { ...(initialData || {}) };
 
   // Helper to get value from Initial Data OR URL (fallback)
-  const getValue = (key: string, defaultVal: string = "") => {
-    if (mergedData && mergedData[key]) return mergedData[key];
+  const getValue = (key: keyof SearchFilters, defaultVal: string = "") => {
+    if (mergedData && mergedData[key]) return String(mergedData[key]);
     return searchParams.get(key) || defaultVal;
   };
 
-  const [pickup, setPickup] = useState(getValue("pickup", ""));
-  const [dropoff, setDropoff] = useState(getValue("dropoff", ""));
+  const [pickup, setPickup] = useState(getValue("pickup" as keyof SearchFilters, ""));
+  const [dropoff, setDropoff] = useState(getValue("dropoff" as keyof SearchFilters, ""));
 
   // Tenta ler datas da URL ou usa valores padrão
-  const getInitialDate = (key: string, daysOffset = 0) => {
+  const getInitialDate = (key: keyof SearchFilters, daysOffset = 0) => {
     const val = getValue(key);
     if (val) return new Date(val);
     return new Date(Date.now() + daysOffset * 86400000);
   };
 
-  const [date1, setDate1] = useState<Date>(getInitialDate("from", 0));
-  const [date2, setDate2] = useState<Date>(getInitialDate("to", 3));
-  const [time1, setTime1] = useState(getValue("time1", "12:00"));
-  const [time2, setTime2] = useState(getValue("time2", "12:00"));
+  const [date1, setDate1] = useState<Date>(getInitialDate("from" as keyof SearchFilters, 0));
+  const [date2, setDate2] = useState<Date>(getInitialDate("to" as keyof SearchFilters, 3));
+  const [time1, setTime1] = useState(getValue("time1" as keyof SearchFilters, "12:00"));
+  const [time2, setTime2] = useState(getValue("time2" as keyof SearchFilters, "12:00"));
 
-  const [passengers, setPassengers] = useState(getValue("passengers", "1"));
-  const [luggage, setLuggage] = useState(getValue("luggage", "1"));
+  const [passengers, setPassengers] = useState(getValue("passengers" as keyof SearchFilters, "1"));
+  const [luggage, setLuggage] = useState(getValue("luggage" as keyof SearchFilters, "1"));
   const [isLoading, setIsLoading] = useState(false);
 
   // Track if current orientation/destination values were actual selections (Real Locations)
@@ -87,16 +75,67 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
     type === "transfer" ? !!getValue("dropoff") : true,
   );
 
+  // Save state to sessionStorage for persistence
+  useEffect(() => {
+    const searchState = {
+      pickup,
+      dropoff,
+      from: date1?.toISOString(),
+      to: date2?.toISOString(),
+      time1,
+      time2,
+      time: time1, // legacy/compatibility
+      passengers,
+      luggage,
+      type,
+    };
+    try {
+      sessionStorage.setItem("witransfer_last_search", JSON.stringify(searchState));
+    } catch (e) {
+      // Ignore
+    }
+  }, [pickup, dropoff, date1, date2, time1, time2, passengers, luggage, type]);
+
+  // Restore state from sessionStorage (draft) when the component mounts.
+  useEffect(() => {
+    try {
+      const did = searchParams.get("did");
+      const saved = did ? sessionStorage.getItem(did) : null;
+      const fallback = sessionStorage.getItem("witransfer_last_search");
+      const json = saved || fallback;
+      if (json) {
+        const s = JSON.parse(json);
+        // Handle nested search object if from a draft
+        const data = s.search || s;
+
+        if (data.pickup) setPickup(data.pickup);
+        if (data.dropoff) setDropoff(data.dropoff);
+        if (data.from) setDate1(new Date(data.from));
+        if (data.to) setDate2(new Date(data.to));
+        if (data.time1) setTime1(data.time1);
+        if (data.time2) setTime2(data.time2);
+        if (data.time && !data.time1) setTime1(data.time);
+        if (data.passengers) setPassengers(String(data.passengers));
+        if (data.luggage) setLuggage(String(data.luggage));
+        setIsPickupValid(!!data.pickup);
+        setIsDropoffValid(type === "transfer" ? !!data.dropoff : true);
+      }
+    } catch (e) {
+      // Ignore parsing errors
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Reset loading state when search params change (navigation complete)
   useEffect(() => {
     setIsLoading(false);
   }, [searchParams]);
 
-  const handleSearch = async () => {
+  const handleSearch = async (silent = false) => {
     // Validação Rígida - Toast Notification
     if (type === "transfer") {
       if (!pickup?.trim()) {
-        toast.error("Por favor, informe o local de partida.", {
+        if (!silent) toast.error("Por favor, informe o local de partida.", {
           duration: 3000,
           style: {
             background: "#fee2e2",
@@ -107,7 +146,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
         return;
       }
       if (!dropoff?.trim()) {
-        toast.error("Por favor, informe o destino da viagem.", {
+        if (!silent) toast.error("Por favor, informe o destino da viagem.", {
           duration: 3000,
           style: {
             background: "#fee2e2",
@@ -118,7 +157,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
         return;
       }
       if (!date1) {
-        toast.error("Selecione a data da viagem.", {
+        if (!silent) toast.error("Selecione a data da viagem.", {
           duration: 3000,
           style: {
             background: "#fee2e2",
@@ -129,7 +168,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
         return;
       }
       if (!passengers || parseInt(passengers) < 1) {
-        toast.error("Informe o número de passageiros.", {
+        if (!silent) toast.error("Informe o número de passageiros.", {
           duration: 3000,
           style: {
             background: "#fee2e2",
@@ -142,7 +181,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
     } else {
       // Rental Validation
       if (!pickup?.trim()) {
-        toast.error("Informe o local de retirada do veículo.", {
+        if (!silent) toast.error("Informe o local de retirada do veículo.", {
           duration: 3000,
           style: {
             background: "#fee2e2",
@@ -153,7 +192,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
         return;
       }
       if (!date1 || !date2) {
-        toast.error("Selecione as datas de início e fim.", {
+        if (!silent) toast.error("Selecione as datas de início e fim.", {
           duration: 3000,
           style: {
             background: "#fee2e2",
@@ -167,7 +206,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
 
     // Validação de Localizações Reais
     if (!isPickupValid) {
-      toast.error(
+      if (!silent) toast.error(
         "Por favor, selecione um local de partida real da lista de sugestões.",
         {
           duration: 4000,
@@ -178,12 +217,12 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
           },
         },
       );
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
       return;
     }
 
     if (type === "transfer" && !isDropoffValid) {
-      toast.error(
+      if (!silent) toast.error(
         "Por favor, selecione um destino real da lista de sugestões.",
         {
           duration: 4000,
@@ -194,62 +233,128 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
           },
         },
       );
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
       return;
     }
 
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
 
-    // The state object matches the data structure mostly.
-    // We ensure date strings are ISO for the server/json.
+    const mergeDateTime = (date: Date, timeStr: string) => {
+      if (!date || !timeStr) return date;
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const newDate = new Date(date);
+      newDate.setHours(hours, minutes, 0, 0);
+      return newDate;
+    };
+
     const searchState: any = {
       pickup,
       dropoff,
-      from: date1?.toISOString(),
+      from: mergeDateTime(date1, time1).toISOString(),
       type,
     };
 
     if (type === "rental") {
-      searchState.to = date2?.toISOString();
+      searchState.to = mergeDateTime(date2, time2).toISOString();
       searchState.time1 = time1;
       searchState.time2 = time2;
     } else {
-      searchState.time = time1; // or time1 renamed
+      searchState.time = time1;
       searchState.time1 = time1;
       searchState.passengers = passengers;
       searchState.luggage = luggage;
     }
 
     try {
-      // Prefer embedding compressed state into URL for portability.
-      const encoded = encodeState(searchState);
+      // 1. Save search state server-side (generate ID) with nested structure for draft
+      const draftPayload = {
+        search: searchState,
+        type: type,
+      };
+      const result = await createDraftAction(draftPayload);
+      const draftId = result?.id || `draft_${Date.now()}`;
 
-      // If encoded string is short enough for URL (conservative limit), use it
-      if (encoded && encoded.length < 1900) {
-        const params = new URLSearchParams();
-        params.set("s", encoded);
-        router.push(`/search/${type}?${params.toString()}`);
-        return;
-      }
-
-      // Fallback: store in sessionStorage and reference by sid
+      // 2. Save locally in sessionStorage for fast retrieval
       try {
-        const sid = `ws_state_${Date.now().toString(36)}_${Math.floor(Math.random() * 10000)}`;
-        sessionStorage.setItem(sid, JSON.stringify(searchState));
-        const params = new URLSearchParams();
-        params.set("sid", sid);
-        router.push(`/search/${type}?${params.toString()}`);
-        return;
+        // Save the nested draft structure under the draft ID
+        sessionStorage.setItem(draftId, JSON.stringify(draftPayload));
+        // Also save flat search state for quick access (read-only reference)
+        sessionStorage.setItem("witransfer_last_search", JSON.stringify(searchState));
+        // Remember last draft id so other pages can reuse it
+        sessionStorage.setItem("witransfer_last_did", draftId);
+
+        // TRIGGER FLAG: Mark that search was explicitly clicked
+        sessionStorage.setItem("witransfer_trigger_search", "true");
+        window.dispatchEvent(new Event("search-triggered"));
       } catch (e) {
-        console.error("Failed to store state in sessionStorage", e);
-        toast.error("Não foi possível salvar o estado da pesquisa.");
+        console.warn("Failed to save search to sessionStorage:", e);
       }
+
+      const params = new URLSearchParams();
+      params.set("did", draftId);
+      router.push(`/search/${type}?${params.toString()}`);
+      return;
     } catch (err) {
       console.error(err);
-      toast.error("Erro ao processar pesquisa.");
+      if (!silent) toast.error("Erro inesperado ao processar pesquisa.");
       setIsLoading(false);
     }
   };
+
+  // Auto-Search Effect
+  useEffect(() => {
+    // Only auto-search if on a results page
+    const isResultsPage = pathname.startsWith("/search");
+    if (!isResultsPage) return;
+
+    // Debounce to avoid constant refreshing
+    const timer = setTimeout(() => {
+      // Construct current state key to compare with last search
+      const mergeDateTime = (date: Date, timeStr: string) => {
+        if (!date || !timeStr) return date;
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        const newDate = new Date(date);
+        newDate.setHours(hours, minutes, 0, 0);
+        return newDate;
+      };
+
+      const currentState: any = {
+        pickup,
+        dropoff,
+        from: mergeDateTime(date1, time1)?.toISOString(),
+        type,
+      };
+
+      if (type === "rental") {
+        currentState.to = mergeDateTime(date2, time2)?.toISOString();
+        currentState.time1 = time1;
+        currentState.time2 = time2;
+      } else {
+        currentState.time = time1;
+        currentState.time1 = time1;
+        currentState.passengers = passengers;
+        currentState.luggage = luggage;
+      }
+
+      const lastSearchJson = sessionStorage.getItem("witransfer_last_search");
+      if (lastSearchJson) {
+        const lastSearch = JSON.parse(lastSearchJson);
+        // Deep compare roughly works for this flat-ish object, but simpler check is stringify
+        // Note: we need to ensure key order matches, or just assume the structure is stable enough.
+        // Or simpler: check if critical fields differ.
+        const currentStr = JSON.stringify(currentState);
+        const lastStr = JSON.stringify(lastSearch);
+
+        // Ideally we normalize dates before stringify, but let's assume getISOString is consistent.
+        if (currentStr !== lastStr) {
+          handleSearch(true); // Silent mode
+        }
+      }
+    }, 1200); // 1.2s delay to wait for typing to finish
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickup, dropoff, date1, date2, time1, time2, passengers, luggage, type, isPickupValid, isDropoffValid, pathname]);
 
   const DateInput = ({ label, value, onChange, disabled }: any) => {
     const [open, setOpen] = React.useState(false);
@@ -261,7 +366,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
             variant="outline"
             data-empty={!value}
             className={cn(
-              "w-full lg:w-[150px] h-11 lg:h-13 px-3 justify-start text-left font-normal bg-white hover:bg-gray-50 border-gray-300",
+              "w-full lg:w-[150px] h-11 lg:h-13 px-3 justify-start text-left font-normal bg-white hover:bg-gray-50 border-0 rounded-none",
               "data-[empty=true]:text-muted-foreground",
             )}
           >
@@ -307,7 +412,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
     min,
     max,
   }: any) => (
-    <div className="w-full lg:w-[100px] bg-white h-11 lg:h-13 px-3 flex flex-col justify-center rounded-[2px] border-l border-gray-200 transition-colors hover:bg-gray-50">
+    <div className="w-full lg:w-[100px] bg-white h-11 lg:h-13 px-3 flex flex-col justify-center rounded-[2px] border-0 transition-colors hover:bg-gray-50">
       <div className="flex items-center gap-2">
         <Icon className="h-4 w-4 lg:h-5 lg:w-5 text-gray-600 flex-shrink-0" />
         <div className="flex flex-col min-w-0 flex-1">
@@ -338,7 +443,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
           : { duration: 0.16, ease: "easeOut" },
         layout: !prefersReducedMotion,
         className:
-          "w-full bg-white rounded-lg shadow-lg border border-gray-300 min-h-[80px] lg:h-[80px] flex flex-wrap lg:flex-nowrap items-center justify-center px-2 sm:px-4 py-3 lg:py-0 gap-2 sm:gap-3 lg:gap-4 overflow-visible",
+          "w-full bg-white rounded-none shadow-lg border border-gray-300 min-h-[80px] lg:h-[80px] flex flex-wrap lg:flex-nowrap items-center justify-center px-2 sm:px-4 py-3 lg:py-0 gap-2 sm:gap-3 lg:gap-4 overflow-visible",
         style: { willChange: "transform, opacity" },
       } as any)}
     >
@@ -359,6 +464,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
         }
         className="flex-grow min-w-0"
         inputClassName="bg-white h-11 lg:h-13 border border-gray-300"
+        showMap={type === "transfer"}
       />
 
       {type === "transfer" && (
@@ -375,6 +481,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
           placeholder="Ponto de destino"
           className="flex-grow min-w-0"
           inputClassName="bg-white h-11 lg:h-13 border border-gray-300"
+          showMap={true}
         />
       )}
 
@@ -396,7 +503,7 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
         value={time1}
         onChange={setTime1}
         label="Hora"
-        className="w-full lg:w-[110px] border border-gray-300"
+        className="w-full lg:w-[110px] border border-gray-300 rounded-none"
       />
 
       {type === "rental" && (
@@ -442,9 +549,9 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
       )}
 
       <Button
-        onClick={handleSearch}
+        onClick={() => handleSearch(false)}
         loading={isLoading}
-        className="h-11 lg:h-13 px-8 bg-[#008009] hover:bg-[#006607] text-white font-bold rounded-[2px] border border-gray-300 transition-transform hover:scale-[1.02] flex-shrink-0"
+        className="h-11 lg:h-13 px-8 bg-[#008009] hover:bg-[#006607] text-white font-bold rounded-none border border-gray-300 transition-transform hover:scale-[1.02] flex-shrink-0"
       >
         Pesquisar
       </Button>

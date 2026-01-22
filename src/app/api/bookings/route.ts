@@ -1,22 +1,24 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-
-const DB_PATH = path.join(process.cwd(), "src/data/db.json");
-
-function getDb() {
-  const data = fs.readFileSync(DB_PATH, "utf-8");
-  return JSON.parse(data);
-}
-
-function saveDb(data: any) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), "utf-8");
-}
+import { supabase } from "@/lib/supabase";
+import type { Booking, User } from "@/types";
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { email, firstName, lastName, phone, ...bookingData } = body;
+    const body: Partial<Booking> & { firstName?: string; lastName?: string; phone?: string; email?: string; customer?: any } = await request.json();
+
+    // Suportar tanto campos no topo quanto dentro de um objeto 'customer'
+    const customer = body.customer || { email: "", name: "", phone: "" };
+    // Handle potential legacy customer structure or flat structure
+    const customerEmail = (customer as any).email || body.email;
+    const email = customerEmail?.toLowerCase();
+
+    // Extract name parts
+    const firstName = body.firstName || (customer as any).firstName || (customer.name ? customer.name.split(" ")[0] : "");
+    const lastName = body.lastName || (customer as any).lastName || (customer.name ? customer.name.split(" ").slice(1).join(" ") : "");
+    const phone = body.phone || customer.phone;
+
+    const bookingData = { ...body };
+    delete (bookingData as any).customer; // Evitar duplicidade se colunas forem dinâmicas
 
     if (!email) {
       return NextResponse.json(
@@ -25,45 +27,53 @@ export async function POST(request: Request) {
       );
     }
 
-    const db = getDb();
-
     // 1. Verificar se o usuário já existe
-    let user = db.users.find(
-      (u: any) => u.email.toLowerCase() === email.toLowerCase(),
-    );
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email.toLowerCase())
+      .single();
+
+    let currentUser = user;
     let userCreated = false;
 
     if (!user) {
       // 2. Criar usuário se não existir
-      user = {
-        id: `USR-${Math.random().toString(36).substring(2, 11).toUpperCase()}`,
-        email,
-        firstName,
-        lastName,
-        phone,
-        createdAt: new Date().toISOString(),
-      };
-      db.users.push(user);
+      const { data: newUser, error: createError } = await supabase
+        .from("users")
+        .insert([{
+          email: email.toLowerCase(),
+          first_name: firstName,
+          last_name: lastName,
+          phone,
+          created_at: new Date().toISOString(),
+        }])
+        .select()
+        .single();
+
+      if (createError) throw createError;
+      currentUser = newUser;
       userCreated = true;
     }
 
     // 3. Criar reserva
-    const newBooking = {
-      id: `BKG-${Math.random().toString(36).substring(2, 11).toUpperCase()}`,
-      userId: user.id,
-      ...bookingData,
-      customerEmail: email,
-      customerName: `${firstName} ${lastName}`,
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    };
+    const { data: newBooking, error: bookingError } = await supabase
+      .from("bookings")
+      .insert([{
+        user_id: currentUser.id,
+        ...bookingData,
+        customer_email: email,
+        customer_name: `${firstName} ${lastName}`,
+        status: "pending",
+        type: "rental", // Default para bookings/route.ts parece ser rental
+        created_at: new Date().toISOString(),
+      }])
+      .select()
+      .single();
 
-    db.bookings.push(newBooking);
+    if (bookingError) throw bookingError;
 
-    // 4. Salvar no DB
-    saveDb(db);
-
-    // 5. Enviar email de confirmação
+    // 4. Enviar email de confirmação
     try {
       await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/send-email`,
@@ -84,17 +94,16 @@ export async function POST(request: Request) {
       );
     } catch (emailError) {
       console.error("Erro ao enviar email:", emailError);
-      // Não falhar a reserva se o email falhar
     }
 
     return NextResponse.json({
       success: true,
       booking: newBooking,
       user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        id: currentUser.id,
+        email: currentUser.email,
+        firstName: currentUser.first_name,
+        lastName: currentUser.last_name,
       },
       userCreated,
       message: userCreated
@@ -107,5 +116,65 @@ export async function POST(request: Request) {
       { error: "Erro interno do servidor" },
       { status: 500 },
     );
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const email = searchParams.get("email");
+
+    if (!email) {
+      return NextResponse.json({ error: "Email é obrigatório" }, { status: 400 });
+    }
+
+    // Buscar usuário pelo email
+    const { data: user } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", email.toLowerCase())
+      .single();
+
+    if (!user) {
+      return NextResponse.json([]);
+    }
+
+    // Buscar reservas do usuário
+    const { data: bookings, error } = await supabase
+      .from("bookings")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    return NextResponse.json(bookings);
+  } catch (error) {
+    console.error("Erro ao buscar reservas:", error);
+    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "ID é obrigatório" }, { status: 400 });
+    }
+
+    // Atualizar status para cancelado em vez de deletar fisicamente (boa prática)
+    const { error } = await supabase
+      .from("bookings")
+      .update({ status: "cancelled", updated_at: new Date().toISOString() })
+      .eq("id", id);
+
+    if (error) throw error;
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Erro ao cancelar reserva:", error);
+    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }

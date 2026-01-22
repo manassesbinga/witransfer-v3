@@ -1,47 +1,47 @@
 import { useState, useCallback, FormEvent } from 'react';
 
 interface UseFormProps<T> {
-    valorInicial: T;
-    onSubmit: (dados: T) => Promise<void>;
+    initialValues: T;
+    onSubmit: (values: T) => Promise<void>;
 }
 
-export function useForm<T>({ valorInicial, onSubmit }: UseFormProps<T>) {
-    const [valores, setValores] = useState<T>(valorInicial);
-    const [erros, setErros] = useState<Partial<Record<keyof T, string>>>({});
-    const [enviando, setEnviando] = useState(false);
+export function useForm<T>({ initialValues: initialValues, onSubmit }: UseFormProps<T>) {
+    const [values, setValues] = useState<T>(initialValues);
+    const [errors, setErrors] = useState<Partial<Record<keyof T, string>>>({});
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const mudar = useCallback((chave: keyof T, valor: any) => {
-        setValores((prev) => ({ ...prev, [chave]: valor }));
-        // Limpar erro ao mudar
-        setErros((prev) => {
-            const novo = { ...prev };
-            delete novo[chave];
-            return novo;
+    const handleChange = useCallback((key: keyof T, value: any) => {
+        setValues((prev) => ({ ...prev, [key]: value }));
+        // Clear error when changing
+        setErrors((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
         });
     }, []);
 
-    const definirErro = useCallback((chave: keyof T, mensagem: string) => {
-        setErros((prev) => ({ ...prev, [chave]: mensagem }));
+    const setError = useCallback((key: keyof T, message: string) => {
+        setErrors((prev) => ({ ...prev, [key]: message }));
     }, []);
 
-    const enviar = async (e: FormEvent) => {
+    const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
-        setEnviando(true);
+        setIsSubmitting(true);
         try {
-            await onSubmit(valores);
+            await onSubmit(values);
         } catch (error) {
             console.error(error);
         } finally {
-            setEnviando(false);
+            setIsSubmitting(false);
         }
     };
 
     return {
-        valores,
-        erros,
-        enviando,
-        mudar,
-        definirErro,
-        enviar,
+        values,
+        errors,
+        isSubmitting,
+        handleChange,
+        setError,
+        handleSubmit,
     };
 }

@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
+import { format, parseISO } from "date-fns";
+import { pt } from "date-fns/locale";
 import { getCarsByIds } from "@/actions/public/search/cars";
 import { getExtras } from "@/actions/public/extras";
-import { getBookingDraft } from "@/actions/public/booking/draft";
 import { simulatePayment } from "@/actions/public/simulate-payment";
-import { Car } from "@/types/cars";
-import { decodeState } from "@/lib/url-state";
-import { Header } from "@/components/header";
+import { Car, Extra, SearchFilters } from "@/types";
+// No URL-encoded state; use server-side drafts (`did`)
+import { getDraftAction } from "@/actions/public/drafts";
+import { createBookingAction } from "@/actions/public/bookings";
+import { Header } from "@/components/header/public";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loading } from "@/components/ui/loading";
@@ -17,18 +19,12 @@ import {
   ChevronRight,
   ShieldCheck,
   Lock,
-  CreditCard,
   CheckCircle2,
-  MapPin,
-  Calendar,
-  Car as CarIcon,
-  Info,
-  Users,
-  Check,
   Loader2,
   AlertCircle,
 } from "lucide-react";
-import { verifyEmail } from "@/actions/public/auth";
+import { toast } from "sonner";
+import BookingLoading from "../../loading";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -41,12 +37,6 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 
-type Extra = {
-  id: string;
-  name: string;
-  price: number;
-  perDay: boolean;
-};
 
 export default function CheckoutPage() {
   const { id } = useParams();
@@ -56,15 +46,17 @@ export default function CheckoutPage() {
   const [cars, setCars] = useState<Car[]>([]);
   const [extras, setExtras] = useState<Extra[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedExtras, setSelectedExtras] = useState<Record<string, number>>(
-    {},
-  );
 
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
     email: "",
     phone: "",
+    ddi: "+244",
+    nif: "",
+    billingName: "",
+    billingType: "individual",
+    drivingLicense: "",
     paymentMethod: "gpo",
     isProcessing: false,
     isSuccess: false,
@@ -74,202 +66,145 @@ export default function CheckoutPage() {
     from?: string;
     to?: string;
   }>({});
-  const [searchContext, setSearchContext] = useState<any>(null);
+  const [searchContext, setSearchContext] = useState<SearchFilters | null>(null);
 
+  // Consolidated Draft Loading
   useEffect(() => {
-    async function fetchDraft() {
+    async function fetchMainData() {
       const draftId = searchParams.get("did");
-      if (draftId) {
+      let draft: any = null;
+
+      // 1. Try Local Cache (fastest & bypasses 431)
+      if (typeof window !== "undefined") {
+        const localData = draftId ? sessionStorage.getItem(draftId) : sessionStorage.getItem("witransfer_last_search");
+        if (localData) {
+          try {
+            draft = JSON.parse(localData);
+            console.log("Loaded Checkout draft from sessionStorage");
+          } catch (e) { }
+        }
+      }
+
+      // 2. Try Server Draft
+      if (draftId && draftId.length > 20) {
         try {
-          const res = await fetch(`/api/drafts?id=${draftId}`);
-          if (res.ok) {
-            const draftData = await res.json();
-            setFormData((prev) => ({
-              ...prev,
-              firstName: draftData.firstName,
-              lastName: draftData.lastName,
-              email: draftData.email,
-              phone: draftData.phone,
-            }));
-            if (draftData.selectedExtras) {
-              setSelectedExtras(draftData.selectedExtras);
-            }
-            if (draftData.searchContext) {
-              setSearchContext(draftData.searchContext);
-              setReservationDates({
-                from:
-                  draftData.searchContext.date ||
-                  draftData.searchContext.from ||
-                  undefined,
-                to:
-                  draftData.searchContext.date ||
-                  draftData.searchContext.to ||
-                  undefined,
-              });
-            }
+          const serverDraft = await getDraftAction(draftId) as any;
+          if (serverDraft) {
+            draft = { ...serverDraft, ...(serverDraft.data || {}) };
+            console.log("Loaded Checkout draft from server");
           }
         } catch (error) {
-          console.error("Erro ao carregar rascunho:", error);
+          console.warn("Could not load server draft in checkout:", error);
         }
       }
-    }
-    fetchDraft();
-  }, [searchParams]);
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const sParam = searchParams.get("s");
-        if (sParam) {
-          const decoded = decodeState(sParam);
-          if (decoded) {
-            if (decoded.offers) {
-              setCars(decoded.offers);
-            }
+      if (draft) {
+        // Priority 1: User data from draft
+        setFormData((prev) => ({
+          ...prev,
+          firstName: draft.firstName || draft.customer?.firstName || "",
+          lastName: draft.lastName || draft.customer?.lastName || "",
+          email: draft.email || draft.customer?.email || "",
+          phone: (draft.phone || draft.customer?.phone || "").replace(/^\+\d+\s/, ""),
+          ddi: (draft.phone || draft.customer?.phone || "").split(" ")[0] || "+244",
+          billingType: draft.billingType || "individual",
+          nif: draft.nif || "",
+          drivingLicense: draft.drivingLicense || draft.customer?.drivingLicense || "",
+          billingName: draft.billingName || "",
+        }));
 
-            if (decoded.search) {
-              setSearchContext(decoded.search);
-              setReservationDates({
-                from: decoded.search.date || undefined,
-                to: decoded.search.date || undefined,
-              });
-            }
-            setLoading(false);
-            return;
-          }
+        // Extras já vêm com o veículo - não há seleção
+
+        // Priority 3: Search Context
+        const ctx = draft.search || draft.searchContext || {
+          pickup: draft.pickup,
+          dropoff: draft.dropoff,
+          from: draft.from,
+          to: draft.to,
+          date: draft.date,
+          time: draft.time,
+          time1: draft.time1,
+          time2: draft.time2,
+          type: draft.type,
+          passengers: draft.passengers,
+          luggage: draft.luggage,
+        };
+        // Filter out null values
+        const cleanCtx = Object.fromEntries(
+          Object.entries(ctx).filter(([_, v]) => v !== null && v !== undefined)
+        );
+        if (Object.keys(cleanCtx).length > 0 && (cleanCtx.pickup || cleanCtx.from)) {
+          setSearchContext(cleanCtx as any);
+          setReservationDates({
+            from: cleanCtx.from || cleanCtx.date || undefined,
+            to: cleanCtx.to || cleanCtx.date || undefined,
+          });
         }
 
+        // Priority 4: Cars
+        if (Array.isArray(draft.carIds) && draft.carIds.length > 0) {
+          const carsData = await getCarsByIds(draft.carIds);
+          // Apply summaries (pricing cache) if available
+          const enhancedCars = (carsData || []).map(car => {
+            const summary = (draft.summaries || []).find((s: any) => s.id === car.id);
+            if (summary) return { ...car, totalPrice: summary.totalPrice, baseTotal: summary.baseTotal, extrasTotal: summary.extrasTotal };
+            return car;
+          });
+            setCars(enhancedCars);
+            try { await fetchExtrasForCars(enhancedCars); } catch (e) { }
+        } else if (Array.isArray(draft.offers) && draft.offers.length > 0) {
+            setCars(draft.offers as any[]);
+            try { await fetchExtrasForCars(draft.offers as any[]); } catch (e) { }
+        }
+      } else {
+        // Handle no-draft fallback (direct IDs in URL)
         if (id && id !== "checkout") {
           const rawId = Array.isArray(id) ? id[0] : id;
-          const draft = await getBookingDraft(rawId);
-
-          let ids: string[] = [];
-
-          if (draft) {
-            ids = draft.carIds;
-
-            if (draft.customer) {
-              setFormData((prev) => ({
-                ...prev,
-                firstName: draft.customer.firstName || "",
-                lastName: draft.customer.lastName || "",
-                email: draft.customer.email || "",
-                phone: draft.customer.phone || "",
-              }));
-            }
-
-            if (draft.selectedExtras) {
-              setSelectedExtras(draft.selectedExtras);
-            }
-
-            if (draft.from || draft.date) {
-              setReservationDates({
-                from: draft.from || draft.date,
-                to: draft.to || draft.date,
-              });
-            }
-          } else {
-            const decodedId = decodeURIComponent(rawId);
-            ids = decodedId
-              .split(",")
-              .map((part) => part.trim())
-              .filter(Boolean);
-
-            setReservationDates({
-              from: searchParams.get("from") || undefined,
-              to: searchParams.get("to") || undefined,
-            });
-          }
-
-          const data = await getCarsByIds(ids);
-          if (data && data.length > 0) {
-            setCars(data);
+          const decodedId = decodeURIComponent(rawId);
+          const ids = decodedId.split(",").map(i => i.trim()).filter(Boolean);
+          if (ids.length > 0) {
+            const data = await getCarsByIds(ids);
+            if (data) { setCars(data); try { await fetchExtrasForCars(data); } catch (e) { } }
           }
         }
-
-        const extrasParam = searchParams.get("e");
-        if (extrasParam) {
-          const extrasMap: Record<string, number> = {};
-          extrasParam.split(",").forEach((part) => {
-            const segments = part.split("-");
-            if (segments.length === 2) {
-              extrasMap[segments[0]] = parseInt(segments[1], 10);
-            } else if (segments.length === 3) {
-              extrasMap[`${segments[0]}-${segments[1]}`] = parseInt(
-                segments[2],
-                10,
-              );
-            }
-          });
-          setSelectedExtras(extrasMap);
-        }
-      } catch (error) {
-        console.error("Checkout: Error loading data", error);
-      } finally {
-        setLoading(false);
+        setReservationDates({
+          from: searchParams.get("from") || searchParams.get("date") || undefined,
+          to: searchParams.get("to") || searchParams.get("date") || undefined,
+        });
       }
+      setLoading(false);
     }
 
-    async function fetchExtras() {
-      const data = await getExtras();
-      setExtras(data);
+    async function fetchExtrasForCars(loadedCars: any[]) {
+      try {
+        const vehicleIds = Array.from(new Set(loadedCars.map((c) => c.id).filter(Boolean)));
+        const partnerIds = Array.from(new Set(loadedCars.map((c) => c.partnerId || c.partner_id).filter(Boolean)));
+        const extrasMap: Record<string, any> = {};
+
+        await Promise.all(vehicleIds.map(async (vid) => {
+          try {
+            const ev = await getExtras({ vehicleId: vid });
+            (ev || []).forEach((e: any) => { extrasMap[e.id] = e; });
+          } catch (e) { }
+        }));
+
+        await Promise.all(partnerIds.map(async (pid) => {
+          try {
+            const ep = await getExtras({ partnerId: pid });
+            (ep || []).forEach((e: any) => { extrasMap[e.id] = e; });
+          } catch (e) { }
+        }));
+
+        setExtras(Object.values(extrasMap));
+      } catch (e) { }
     }
 
-    loadData();
-    fetchExtras();
+    fetchMainData();
   }, [id, searchParams]);
 
-  const isExtraIncludedInCar = (car: Car, extraId: string): boolean => {
-    return car.extras?.includes(extraId) || false;
-  };
-
   const calculateTotal = () => {
-    const fromDate = reservationDates.from;
-    const toDate = reservationDates.to;
-    let rentalDays = 3;
-
-    if (fromDate && toDate) {
-      const d1 = new Date(fromDate);
-      const d2 = new Date(toDate);
-      const diffTime = Math.abs(d2.getTime() - d1.getTime());
-      rentalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
-    }
-
-    let total = 0;
-
-    cars.forEach((car) => {
-      const isTransfer =
-        searchContext?.type === "transfer" ||
-        searchParams.get("type") === "transfer" ||
-        car.availableFor === "transfer";
-      if (isTransfer) {
-        total += car.price;
-      } else {
-        total += car.price * rentalDays;
-        total += (car.insurance?.dailyPrice || 0) * rentalDays;
-      }
-    });
-
-    Object.entries(selectedExtras).forEach(([key, qty]) => {
-      const segments = key.split("-");
-      const carId = segments.length > 1 ? segments[0] : null;
-      const extraId = segments.length > 1 ? segments[1] : key;
-
-      cars.forEach((car) => {
-        if (
-          (!carId || car.id === carId) &&
-          !isExtraIncludedInCar(car, extraId)
-        ) {
-          const extra = extras.find((e) => e.id === extraId);
-          if (extra) {
-            const price = extra.perDay ? extra.price * rentalDays : extra.price;
-            total += price * qty;
-          }
-        }
-      });
-    });
-
-    return total;
+    // Preços já vêm calculados do servidor - apenas somar
+    return cars.reduce((total, car) => total + ((car as any).totalPrice || 0), 0);
   };
 
   const handleBook = async () => {
@@ -280,7 +215,6 @@ export default function CheckoutPage() {
       const totalAmount = calculateTotal();
       const paymentId = `P${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
 
-      // Primeiro, simula o pagamento via webhook
       const paymentResult = await simulatePayment({
         paymentId,
         amount: totalAmount,
@@ -293,7 +227,6 @@ export default function CheckoutPage() {
         },
         metadata: {
           carIds,
-          selectedExtras,
           searchContext,
         },
       });
@@ -304,64 +237,111 @@ export default function CheckoutPage() {
         );
       }
 
-      // Se o pagamento foi simulado com sucesso, salva a reserva
-      const response = await fetch("/api/bookings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          carIds: carIds,
-          selectedExtras,
-          totalAmount,
-          searchContext: searchContext,
-          customer: {
-            firstName: formData.firstName,
-            lastName: formData.lastName,
-            email: formData.email,
-            phone: formData.phone,
-          },
-          payment: {
-            method: formData.paymentMethod,
-            paymentId,
-            status: "success",
-          },
-        }),
+      // Normalize search context to ensure pickup/dropoff/from/to are passed to server
+      let payloadSearch = searchContext;
+      if (!payloadSearch) {
+        // try to read draft from sessionStorage (client-side cache)
+        const did = searchParams.get("did");
+        if (did && typeof window !== "undefined") {
+          try {
+            const raw = sessionStorage.getItem(did) || sessionStorage.getItem("witransfer_last_search") || sessionStorage.getItem("witransfer_last_did") && sessionStorage.getItem(sessionStorage.getItem("witransfer_last_did") || "");
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              payloadSearch = parsed.search || parsed.searchContext || parsed;
+            }
+          } catch (e) {
+            // ignore
+          }
+        } else if (typeof window !== "undefined") {
+          // No did in URL: try last saved draft/search
+          try {
+            const raw = sessionStorage.getItem("witransfer_last_search") || (sessionStorage.getItem("witransfer_last_did") ? sessionStorage.getItem(sessionStorage.getItem("witransfer_last_did")!) : null);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              payloadSearch = parsed.search || parsed.searchContext || parsed;
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+      // Fallback to URL params
+      payloadSearch = payloadSearch || {
+        pickup: searchParams.get("pickup") || undefined,
+        dropoff: searchParams.get("dropoff") || undefined,
+        from: reservationDates.from || searchParams.get("from") || searchParams.get("date") || undefined,
+        to: reservationDates.to || searchParams.get("to") || searchParams.get("date") || undefined,
+        type: (searchParams.get("type") as any) || undefined,
+      };
+
+      const result = await createBookingAction({
+        email: formData.email,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        phone: formData.phone,
+        drivingLicense: formData.drivingLicense,
+        nif: formData.nif,
+
+        carIds: carIds,
+        totalAmount,
+        searchContext: payloadSearch,
+        // also include pickup/dropoff explicitly for redundancy
+        pickup: payloadSearch?.pickup,
+        dropoff: payloadSearch?.dropoff,
+        from: payloadSearch?.from,
+        to: payloadSearch?.to,
+        payment: {
+          method: formData.paymentMethod,
+          paymentId,
+          status: "success",
+        },
       });
 
-      if (response.ok) {
+      if (result.success && result.booking?.id && result.user?.id) {
+        localStorage.setItem("is_auth", "true");
+        localStorage.setItem("user_email", formData.email);
+
+        toast.success("Reserva realizada com sucesso!", {
+          description: "Enviamos um email com os detalhes da sua confirmação.",
+          duration: 5000,
+        });
+
         setFormData((prev) => ({
           ...prev,
-          isProcessing: false,
+          // We keep isProcessing: true to maintain the loading state on the button
           isSuccess: true,
         }));
+
+        // Redirecionamento automático após sucesso
+        setTimeout(() => {
+          const isAuth = localStorage.getItem("is_auth") === "true";
+          if (isAuth) {
+            router.push("/history"); // Redireciona para Minhas Viagens se logado
+          } else {
+            router.push("/search/rental"); // Se não logado, redireciona para pesquisa
+          }
+        }, 3000); // Aguarda 3 segundos para que o utilizador possa ver a mensagem de sucesso
       } else {
-        throw new Error("Falha ao salvar reserva");
+        console.error("Falha de integridade na reserva:", result);
+        throw new Error(result.error || "Falha crítica: A reserva não pode ser confirmada completamente.");
       }
     } catch (error) {
       console.error("Erro ao processar reserva:", error);
       setFormData((prev) => ({ ...prev, isProcessing: false }));
-      alert(
-        `Erro ao processar a reserva: ${error instanceof Error ? error.message : "Tente novamente."}`,
-      );
+
+      toast.error("Não foi possível concluir a reserva", {
+        description: error instanceof Error ? error.message : "Ocorreu um erro inesperado. Tente novamente.",
+        duration: 5000,
+      });
     }
   };
 
-  if (loading)
-    return (
-      <div className="min-h-screen flex items-start justify-center bg-white pt-24">
-        <div className="w-full max-w-3xl mx-4 relative">
-          <Loading
-            isVisible={true}
-            message="A preparar pagamento seguro..."
-            inline
-          />
-        </div>
-      </div>
-    );
+  if (loading) return <BookingLoading />;
 
   if (cars.length === 0) {
     return (
       <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center">
-        <div className="bg-white rounded-xl p-8 text-center max-w-sm mx-4">
+        <div className="bg-white rounded-none p-8 text-center max-w-sm mx-4">
           <div className="mb-4">
             <AlertCircle className="h-12 w-12 text-red-500 mx-auto" />
           </div>
@@ -374,7 +354,7 @@ export default function CheckoutPage() {
           </p>
           <Button
             onClick={() => router.push("/")}
-            className="w-full bg-[#006ce4] hover:bg-[#005bb3] text-white font-bold h-12 rounded-lg"
+            className="w-full bg-[#006ce4] hover:bg-[#005bb3] text-white font-bold h-12 rounded-none"
           >
             Voltar à Página Inicial
           </Button>
@@ -415,7 +395,7 @@ export default function CheckoutPage() {
 
           <div className="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded border border-green-100/50">
             <ShieldCheck className="h-4 w-4" />
-            <span className="text-[10px] font-bold uppercase tracking-tight">
+            <span className="text-[10px] font-bold tracking-tight">
               Pagamento 100% Seguro
             </span>
           </div>
@@ -425,12 +405,13 @@ export default function CheckoutPage() {
       <main className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8">
           <div className="space-y-5">
-            {/* Card de dados do passageiro removido */}
 
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+
+            {/* 1. Dados da Faturação (NIF) */}
+            <div className="bg-white rounded-none p-5 shadow-sm border border-gray-100">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <span className="bg-[#003580] text-white w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold">
-                  {!formData.email || !searchParams.get("did") ? "2" : "1"}
+                <span className="bg-[#003580] text-white w-7 h-7 rounded-none flex items-center justify-center text-xs font-bold">
+                  1
                 </span>
                 Método de Pagamento
               </h2>
@@ -444,7 +425,7 @@ export default function CheckoutPage() {
               >
                 <div
                   className={cn(
-                    "flex items-start gap-3 p-4 border rounded-lg cursor-pointer transition-all",
+                    "flex items-start gap-3 p-4 border rounded-none cursor-pointer transition-all",
                     formData.paymentMethod === "gpo"
                       ? "border-[#006ce4] bg-blue-50/30 ring-1 ring-[#006ce4]"
                       : "border-gray-200 hover:border-gray-300",
@@ -457,11 +438,11 @@ export default function CheckoutPage() {
                       className="font-semibold text-gray-900 cursor-pointer text-base flex items-center gap-2"
                     >
                       GPO (Cartão ou Multicaixa)
-                      <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold uppercase">
+                      <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">
                         Recomendado
                       </span>
                     </Label>
-                    <p className="text-sm text-gray-500 mt-1 italic">
+                    <p className="text-sm text-gray-500 mt-1">
                       Pagamento instantâneo via portal GPO.
                     </p>
                   </div>
@@ -469,7 +450,7 @@ export default function CheckoutPage() {
 
                 <div
                   className={cn(
-                    "flex items-start gap-3 p-4 border rounded-lg cursor-pointer transition-all",
+                    "flex items-start gap-3 p-4 border rounded-none cursor-pointer transition-all",
                     formData.paymentMethod === "reference"
                       ? "border-[#006ce4] bg-blue-50/30 ring-1 ring-[#006ce4]"
                       : "border-gray-200 hover:border-gray-300",
@@ -487,7 +468,7 @@ export default function CheckoutPage() {
                     >
                       Referência Multicaixa
                     </Label>
-                    <p className="text-sm text-gray-500 mt-1 italic">
+                    <p className="text-sm text-gray-500 mt-1">
                       Pague no ATM ou Internet Banking.
                     </p>
                   </div>
@@ -495,7 +476,7 @@ export default function CheckoutPage() {
 
                 <div
                   className={cn(
-                    "flex items-start gap-3 p-4 border rounded-lg cursor-pointer transition-all",
+                    "flex items-start gap-3 p-4 border rounded-none cursor-pointer transition-all",
                     formData.paymentMethod === "proposal"
                       ? "border-[#006ce4] bg-blue-50/30 ring-1 ring-[#006ce4]"
                       : "border-gray-200 hover:border-gray-300",
@@ -513,7 +494,7 @@ export default function CheckoutPage() {
                     >
                       Receber Proposta por Email
                     </Label>
-                    <p className="text-sm text-gray-500 mt-1 italic">
+                    <p className="text-sm text-gray-500 mt-1">
                       Receba um email com instruções para pagamento posterior.
                     </p>
                   </div>
@@ -529,33 +510,73 @@ export default function CheckoutPage() {
           </div>
 
           <div className="space-y-6 lg:sticky lg:top-4">
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+            <div className="bg-white rounded-none p-5 shadow-sm border border-gray-100">
               <h3 className="text-base font-bold text-gray-900 mb-4">
                 Resumo da Reserva
               </h3>
               <div className="flex gap-4 mb-4 border-b border-gray-100 pb-4">
                 <div className="flex flex-col gap-1">
-                  <span className="text-[9px] uppercase font-bold text-gray-400">
+                  <span className="text-[9px] font-bold text-gray-400">
                     Levantamento
                   </span>
-                  <span className="font-bold text-gray-900 text-xs">
-                    28 Dez 2025
+                  <span className="font-bold text-gray-900 text-[10px] md:text-xs">
+                    {reservationDates.from && reservationDates.from !== "---"
+                      ? format(parseISO(reservationDates.from), "dd MMM yyyy", { locale: pt })
+                      : "---"}
                   </span>
-                  <span className="text-[11px] text-gray-500">10:00</span>
+                  <span className="text-[10px] text-gray-500">
+                    {reservationDates.from && reservationDates.from !== "---"
+                      ? format(parseISO(reservationDates.from), "HH:mm")
+                      : "10:00"}
+                  </span>
                 </div>
                 <div className="flex-1 flex items-center justify-center">
                   <ChevronRight className="h-4 w-4 text-gray-300" />
                 </div>
                 <div className="flex flex-col gap-1 text-right">
-                  <span className="text-[9px] uppercase font-bold text-gray-400">
+                  <span className="text-[9px] font-bold text-gray-400">
                     Devolução
                   </span>
-                  <span className="font-bold text-gray-900 text-xs">
-                    31 Dez 2025
+                  <span className="font-bold text-gray-900 text-[10px] md:text-xs">
+                    {reservationDates.to && reservationDates.to !== "---"
+                      ? format(parseISO(reservationDates.to), "dd MMM yyyy", { locale: pt })
+                      : "---"}
                   </span>
-                  <span className="text-[11px] text-gray-500">10:00</span>
+                  <span className="text-[10px] text-gray-500">
+                    {reservationDates.to && reservationDates.to !== "---"
+                      ? format(parseISO(reservationDates.to), "HH:mm")
+                      : "10:00"}
+                  </span>
                 </div>
               </div>
+
+              {(searchContext?.type === "transfer" || searchParams.get("type") === "transfer") && (
+                <div className="mb-4 p-3 bg-blue-50/30 border border-blue-100 rounded-none space-y-2">
+                  <div className="flex items-start gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-1"></div>
+                    <div className="flex flex-col">
+                      <span className="text-[8px] font-bold text-green-600 uppercase">Partida</span>
+                      <span className="text-[10px] font-bold text-gray-700 line-clamp-1">{searchContext?.pickup || searchParams.get("pickup")}</span>
+                    </div>
+                  </div>
+                  {(searchContext?.stops || []).map((stop: string, i: number) => (
+                    <div key={i} className="flex items-start gap-2 border-l border-dashed border-gray-300 ml-[2.5px] pl-3 py-0.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1"></div>
+                      <div className="flex flex-col">
+                        <span className="text-[8px] font-bold text-amber-600 uppercase">Paragem {i + 1}</span>
+                        <span className="text-[10px] font-bold text-gray-600 line-clamp-1">{stop}</span>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex items-start gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1"></div>
+                    <div className="flex flex-col">
+                      <span className="text-[8px] font-bold text-red-600 uppercase">Destino</span>
+                      <span className="text-[10px] font-bold text-gray-700 line-clamp-1">{searchContext?.dropoff || searchParams.get("dropoff")}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-4">
                 {cars.map((car) => {
@@ -583,22 +604,15 @@ export default function CheckoutPage() {
                       Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
                   }
 
-                  const rentalPrice = isTransfer
-                    ? car.price
-                    : car.price * rentalDays;
+                  const rentalPrice = (car as any).baseTotal || (isTransfer
+                    ? car.price * ((car as any).distance || 30)
+                    : car.price * rentalDays);
                   const insurancePrice = isTransfer
                     ? 0
                     : (car.insurance?.dailyPrice || 0) * rentalDays;
-                  const cardExtras = extras
-                    .map((extra) => {
-                      const key = `${car.id}-${extra.id}`;
-                      const isIncluded = isExtraIncludedInCar(car, extra.id);
-                      const qty = selectedExtras[key] ?? (isIncluded ? 1 : 0);
 
-                      if (qty === 0) return null;
-                      return { ...extra, qty, isIncluded };
-                    })
-                    .filter((e): e is any => e !== null);
+                  // Mostrar apenas extras incluídos com o veículo
+                  const cardExtras = (car.extrasObjects || []) as any[];
 
                   return (
                     <div key={car.id} className="text-sm space-y-2">
@@ -614,7 +628,7 @@ export default function CheckoutPage() {
                         <span>AOA {rentalPrice.toLocaleString("pt-AO")}</span>
                       </div>
                       {isTransfer && car.distanceString && (
-                        <div className="text-[12px] text-[#006ce4] font-medium -mt-1 italic">
+                        <div className="text-[12px] text-[#006ce4] font-medium -mt-1">
                           {pickup} → {dropoff} ({car.distanceString})
                         </div>
                       )}
@@ -627,35 +641,21 @@ export default function CheckoutPage() {
                         </div>
                       )}
                       {cardExtras.map((extra: any) => {
-                        const displayPrice = extra.isIncluded
-                          ? 0
-                          : (extra.perDay
-                              ? extra.price * rentalDays
-                              : extra.price) * extra.qty;
+                        const isPerDay = extra.per_day || extra.perDay;
+                        const displayPrice = isPerDay ? extra.price * rentalDays : extra.price;
                         return (
                           <div
                             key={extra.id}
-                            className={cn(
-                              "flex justify-between font-medium",
-                              extra.isIncluded
-                                ? "text-blue-500 italic"
-                                : "text-[#008009]",
-                            )}
+                            className="flex justify-between font-medium text-[#008009]"
                           >
                             <div className="flex items-center gap-1.5">
-                              <span>
-                                {extra.name} (x{extra.qty})
-                              </span>
-                              {extra.isIncluded && (
-                                <Badge className="bg-blue-50 text-blue-600 border-none text-[8px] h-4 uppercase">
-                                  Incluído
-                                </Badge>
-                              )}
+                              <span>{extra.name}</span>
+                              <Badge className="bg-blue-50 text-blue-600 border-none text-[8px] h-4">
+                                Incluído
+                              </Badge>
                             </div>
                             <span>
-                              {extra.isIncluded
-                                ? "GRÁTIS"
-                                : `AOA ${displayPrice.toLocaleString("pt-AO")}`}
+                              AOA {displayPrice.toLocaleString("pt-AO")}
                             </span>
                           </div>
                         );
@@ -682,7 +682,7 @@ export default function CheckoutPage() {
                 onClick={handleBook}
                 loading={formData.isProcessing}
                 disabled={formData.isSuccess}
-                className="w-full mt-6 bg-[#008009] hover:bg-[#006607] text-white font-bold h-12 text-base rounded-lg shadow-md disabled:opacity-70 transition-all active:scale-95"
+                className="w-full mt-6 bg-[#008009] hover:bg-[#006607] text-white font-bold h-12 text-base rounded-none shadow-md disabled:opacity-70 transition-all active:scale-95"
               >
                 {formData.isSuccess
                   ? "Reserva Finalizada!"
@@ -692,7 +692,7 @@ export default function CheckoutPage() {
               </Button>
 
               {formData.isSuccess && (
-                <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg text-center">
+                <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-none text-center">
                   <CheckCircle2 className="h-8 w-8 text-green-600 mx-auto mb-2" />
                   <h4 className="font-semibold text-green-900">Sucesso!</h4>
                   <p className="text-xs text-green-700/80 mt-1 font-medium">

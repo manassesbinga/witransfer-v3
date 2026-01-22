@@ -1,568 +1,660 @@
 "use server";
 
-import { Car, SearchFilters, SearchResponse, Supplier } from "@/types/cars";
-import { unstable_cache } from "next/cache";
+import { Car, SearchFilters, SearchResponse, Supplier, SystemData, Extra } from "@/types";
 import { createPublicAction } from "@/middlewares/actions/action-factory";
-import db from "@/data/db.json";
+import { supabase } from "@/lib/supabase";
+import { revalidatePath } from "next/cache";
+import {
+  getCachedVehicles,
+  getCachedVehicleClasses,
+  getCachedExtras,
+  getCachedServices,
+  getCachedClassPrices,
+  getCachedVehiclePrices,
+  getConflictingBookings
+} from "@/lib/cache";
+import { orsGeocode, orsDirections } from "@/lib/ors";
 
-// Data references
-const carsData = (db.cars || []) as unknown as Car[];
-const categoriesData = db.categories || [];
-const extrasData = db.extras || [];
+function normalize(s: string) {
+  if (!s) return "";
+  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
 
-// --- Internal Helper Functions ---
+// Helper to fetch core data from Supabase with caching
+async function getBaseData() {
+  console.log('🔍 [SEARCH] Iniciando busca de dados base...');
 
-async function getCoords(
-  location: string,
-): Promise<{ lat: number; lon: number } | null> {
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1&countrycodes=ao`;
-    const resp = await fetch(url, {
-      headers: { "User-Agent": "WiTransfer-App" },
-    });
-    const data = await resp.json();
-    if (data && data[0]) {
-      return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+  const [vehicles, categories, extras, services, classPrices, vehiclePrices] = await Promise.all([
+    getCachedVehicles(),
+    getCachedVehicleClasses(),
+    getCachedExtras(),
+    getCachedServices(),
+    getCachedClassPrices(),
+    getCachedVehiclePrices(),
+  ]);
+
+  console.log('📦 [SEARCH] Dados recebidos:');
+  console.log(`  - Veículos: ${vehicles.length}`);
+  console.log(`  - Categorias: ${categories.length}`);
+  console.log(`  - Extras: ${extras.length}`);
+  console.log(`  - Serviços: ${services.length}`);
+  console.log(`  - Preços de Classes: ${classPrices.length}`);
+  console.log(`  - Preços de Veículos: ${vehiclePrices.length}`);
+
+  const cars = vehicles.map((v: any) => {
+    const car: Car = {
+      ...v,
+      id: v.id,
+      name: `${v.brand} ${v.model}`,
+      brand: v.brand,
+      model: v.model,
+      licensePlate: v.license_plate,
+      year: v.year,
+      color: v.color,
+      type: v.vehicle_class_id,
+      category: v.vehicle_classes?.name,
+      supplier: v.partners?.name,
+      supplierLogo: v.partners?.avatar_url,
+      locationName: `${v.partners?.address_province || ""}, ${v.partners?.address_city || ""}`.replace(/^, /, ""),
+      locationType: "Agência",
+      transmission: v.transmission,
+      seats: v.seats || 4,
+      doors: v.doors || 4,
+      luggage: `${v.luggage_big || 0} Grandes, ${v.luggage_small || 0} Pequenas`,
+      luggage_big: v.luggage_big || 0,
+      luggage_small: v.luggage_small || 0,
+      hasAC: v.has_ac,
+      image: v.image_url,
+      mileage: v.mileage ? String(v.mileage) : "0",
+      price: 0,
+      availableFor: "both",
+      includedServices: [
+        v.has_ac ? "AR-CONDICIONADO" : null,
+        v.transmission === "automatic" ? "CÂMBIO AUTOMÁTICO" : null,
+        "SEGURO BÁSICO INCLUSO"
+      ].filter(Boolean),
+      // insurance: no default insurance added here; partners may provide insurance via data
+    } as any;
+
+    // ONLY include extras that are explicitly linked to this vehicle in the DB
+    const rawExtras = v.extras;
+    let vehicleExtraIds: string[] = [];
+    if (Array.isArray(rawExtras)) {
+      vehicleExtraIds = rawExtras;
+    } else if (typeof rawExtras === "string" && rawExtras.trim()) {
+      try {
+        const parsed = JSON.parse(rawExtras);
+        if (Array.isArray(parsed)) vehicleExtraIds = parsed;
+      } catch (e) {
+        // leave as empty array
+      }
     }
-  } catch (e) {
-    console.error("Geocoding error:", e);
+
+    if (vehicles.length === 1 || v.id === '3b4c53a1-8b60-4742-8bbb-36d131e16127') {
+      console.log(`🔍 [DEBUG] Veículo ${v.brand} ${v.model} (${v.id}) - rawExtras:`, rawExtras);
+      console.log(`🔍 [DEBUG] Veículo ${v.id} - vehicleExtraIds:`, vehicleExtraIds);
+    }
+
+    (car as any).extras = vehicleExtraIds;
+
+    // Handle Services strictly
+    const rawServices = v.services;
+    let vehicleServiceIds: string[] = [];
+    if (Array.isArray(rawServices)) {
+      vehicleServiceIds = rawServices;
+    } else if (typeof rawServices === "string" && rawServices.trim()) {
+      try {
+        const parsed = JSON.parse(rawServices);
+        if (Array.isArray(parsed)) vehicleServiceIds = parsed;
+      } catch (e) { }
+    }
+    (car as any).services = vehicleServiceIds;
+
+    // ONLY include extras that are explicitly linked to this vehicle in the DB
+    const extrasObjects = (extras || []).filter((ex: any) => vehicleExtraIds.includes(ex.id));
+    (car as any).extrasObjects = extrasObjects;
+
+    return car;
+  });
+
+  console.log(`✅ [SEARCH] ${cars.length} carros processados com sucesso`);
+  if (cars.length > 0) {
+    console.log('📋 [SEARCH] Exemplo de carro:', {
+      id: cars[0].id,
+      name: cars[0].name,
+      supplier: cars[0].supplier,
+      extras: (cars[0] as any).extras?.length || 0
+    });
   }
-  return null;
+
+  return {
+    cars,
+    categories,
+    extras,
+    services,
+    classPrices,
+    vehiclePrices,
+  };
+}
+
+async function getCoords(query: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    // Busca em paralelo para maior rapidez e redundância
+    const [orsResults, nominatimResults] = await Promise.all([
+      orsGeocode(query),
+      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=ao`, {
+        headers: { "User-Agent": "WiTransfer-App" },
+        next: { revalidate: 3600 }
+      }).then(r => r.ok ? r.json() : []).catch(() => [])
+    ]);
+
+    // 1. Preferência para ORS (Geralmente mais preciso para moradas)
+    if (orsResults && orsResults.length > 0) {
+      console.log(`📍 [GEO] Coordenadas obtidas via ORS para: ${query}`);
+      return {
+        lat: orsResults[0].lat,
+        lng: orsResults[0].lng
+      };
+    }
+
+    // 2. Fallback para Nominatim
+    if (nominatimResults && nominatimResults.length > 0) {
+      console.log(`📍 [GEO] Fallback para Nominatim para: ${query}`);
+      return {
+        lat: parseFloat(nominatimResults[0].lat),
+        lng: parseFloat(nominatimResults[0].lon)
+      };
+    }
+
+    return null;
+  } catch (e) {
+    console.error("❌ [GEO] Erro crítico no Geocoding:", e);
+    return null;
+  }
 }
 
 async function calculateDistance(
-  origin?: string,
-  destination?: string,
+  origin: string,
+  destination: string,
+  stops: string[] = [],
+  originCoords?: [number, number],
+  destCoords?: [number, number],
+  stopsCoords?: ([number, number] | null)[]
 ): Promise<number> {
-  if (!origin || !destination) return 30;
+  try {
+    const allWaypoints = [origin, ...stops, destination].filter(Boolean);
+    console.log(`🗺️ [DISTANCE] Calculando rota: ${allWaypoints.join(" -> ")}`);
 
-  const coords1 = await getCoords(origin);
-  const coords2 = await getCoords(destination);
+    // 1. Obter todas as coordenadas (usar as fornecidas ou buscar via Geocoding)
+    let validCoords: { lat: number; lng: number }[] = [];
 
-  if (coords1 && coords2) {
-    try {
-      const url = `http://router.project-osrm.org/route/v1/driving/${coords1.lon},${coords1.lat};${coords2.lon},${coords2.lat}?overview=false`;
-      const resp = await fetch(url);
-      const data = await resp.json();
-      if (data.routes && data.routes[0]) {
-        return Math.round(data.routes[0].distance / 1000);
-      }
-    } catch (e) {
-      console.error("OSRM error:", e);
-    }
+    // Se as coordenadas básicas foram passadas, montamos o array diretamente (mais rápido)
+    if (originCoords && destCoords) {
+      console.log("⚡ [DISTANCE] Usando coordenadas diretas fornecidas pelo cliente.");
+      validCoords.push({ lat: originCoords[0], lng: originCoords[1] });
 
-    const R = 6371;
-    const dLat = ((coords2.lat - coords1.lat) * Math.PI) / 180;
-    const dLon = ((coords2.lon - coords1.lon) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((coords1.lat * Math.PI) / 180) *
-        Math.cos((coords2.lat * Math.PI) / 180) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return Math.round(R * c);
-  }
-
-  const base = 15;
-  const variant = (origin.length + destination.length) % 20;
-  return base + variant;
-}
-
-// --- Core Logic Functions (Internal for Actions and API Routes) ---
-
-export async function searchCarsInternal(
-  filters: SearchFilters,
-): Promise<SearchResponse> {
-  console.log("\n--- [SEARCH REQUEST] ---");
-  console.log(
-    `Type: ${filters.type || "rental"} | Pickup: ${filters.pickup || "None"}`,
-  );
-  console.log(
-    `Filters: ${JSON.stringify({ cat: filters.categories, loc: filters.loc, sup: filters.sup, passengers: filters.passengers, luggage: filters.luggage })}`,
-  );
-
-  const { limit = 10, offset = 0 } = filters;
-  let results = [...carsData] as Car[];
-  let filterReason = "";
-
-  const searchType = filters.type || "rental";
-  const beforeType = results.length;
-
-  results = results.filter((car) => {
-    // Suporte para ambos os formatos de disponibilidade
-    if (car.availableFor) {
-      if (searchType === "rental")
-        return car.availableFor === "rental" || car.availableFor === "both";
-      return car.availableFor === "transfer" || car.availableFor === "both";
-    }
-
-    // Fallback para serviceTypes (usado no painel admin)
-    if ((car as any).serviceTypes) {
-      return (car as any).serviceTypes.includes(searchType);
-    }
-
-    return false; // Se não tiver nenhum, esconde
-  });
-
-  if (results.length === 0 && beforeType > 0)
-    filterReason = `Filtered by type (${searchType})`;
-
-  if (filters.pickup && filters.type !== "transfer" && results.length > 0) {
-    const q = filters.pickup.toLowerCase();
-    const keywords = q.split(/[\s,]+/).filter((k) => k.length > 2);
-    const beforeLoc = results.length;
-
-    results = results.filter((car) => {
-      const locName = (car.locationName || "").toLowerCase();
-      const carName = car.name.toLowerCase();
-
-      if (locName.includes(q) || q.includes(locName) || carName.includes(q))
-        return true;
-
-      return keywords.some((word) => locName.includes(word));
-    });
-
-    if (results.length === 0 && beforeLoc > 0)
-      filterReason = `No match for location zone: "${filters.pickup}"`;
-  }
-
-  if (
-    filters.categories &&
-    filters.categories.length > 0 &&
-    results.length > 0
-  ) {
-    const before = results.length;
-    results = results.filter((car) => filters.categories?.includes(car.type));
-    if (results.length === 0 && before > 0)
-      filterReason = "Selected categories not available";
-  }
-
-  if (filters.loc && filters.loc.length > 0)
-    results = results.filter((car) => filters.loc?.includes(car.locationType));
-  if (filters.sup && filters.sup.length > 0)
-    results = results.filter((car) => filters.sup?.includes(car.supplier));
-  if (filters.trans && filters.trans.length > 0)
-    results = results.filter((car) =>
-      filters.trans?.includes(car.transmission),
-    );
-
-  if (filters.seats && filters.seats.length > 0) {
-    results = results.filter((car) => {
-      if (filters.seats?.includes("6+")) return car.seats >= 6;
-      return filters.seats?.includes(car.seats.toString());
-    });
-  }
-
-  // Sistema de recomendação inteligente para passageiros e malas
-  let needsMultipleVehicles = false;
-  let recommendationInfo: any = null;
-
-  if (filters.type === "transfer") {
-    const passengerCount =
-      typeof filters.passengers === "string"
-        ? parseInt(filters.passengers)
-        : filters.passengers || 0;
-
-    const luggageCount =
-      typeof filters.luggage === "string"
-        ? parseInt(filters.luggage)
-        : filters.luggage || 0;
-
-    // Verificar se algum carro individual pode atender
-    const maxSeats = Math.max(...results.map((car) => car.seats));
-    const maxLuggage = Math.max(
-      ...results.map((car) => {
-        const match = car.luggage.match(/\d+/);
-        return match ? parseInt(match[0]) : 0;
-      }),
-    );
-
-    // Se exceder capacidade de um único veículo
-    if (passengerCount > maxSeats || luggageCount > maxLuggage) {
-      needsMultipleVehicles = true;
-
-      // Calcular quantos veículos são necessários
-      const vehiclesNeededForPassengers = Math.ceil(passengerCount / maxSeats);
-      const vehiclesNeededForLuggage = Math.ceil(luggageCount / maxLuggage);
-      const vehiclesNeeded = Math.max(
-        vehiclesNeededForPassengers,
-        vehiclesNeededForLuggage,
-      );
-
-      recommendationInfo = {
-        needsMultiple: true,
-        totalPassengers: passengerCount,
-        totalLuggage: luggageCount,
-        vehiclesNeeded,
-        maxSeatsPerVehicle: maxSeats,
-        maxLuggagePerVehicle: maxLuggage,
-        message: `ATENÇÃO: Para ${passengerCount} passageiros e ${luggageCount} malas, recomendamos ${vehiclesNeeded} veículos.`,
-      };
-
-      // Marcar carros como recomendados e adicionar informação
-      results = results.map((car) => {
-        const carLuggageMatch = car.luggage.match(/\d+/);
-        const carLuggageCapacity = carLuggageMatch
-          ? parseInt(carLuggageMatch[0])
-          : 0;
-
-        return {
-          ...car,
-          isRecommendedForMultiple: true,
-          capacityInfo: {
-            seats: car.seats,
-            luggage: carLuggageCapacity,
-          },
-        };
-      });
-
-      // Ordenar por capacidade (maiores primeiro)
-      results.sort((a, b) => {
-        const aCapacity = a.seats + (a.capacityInfo?.luggage || 0);
-        const bCapacity = b.seats + (b.capacityInfo?.luggage || 0);
-        return bCapacity - aCapacity;
-      });
-    } else {
-      // Filtragem normal quando um único veículo pode atender
-      if (!isNaN(passengerCount) && passengerCount > 0) {
-        results = results.filter((car) => car.seats >= passengerCount);
-      }
-
-      if (!isNaN(luggageCount) && luggageCount > 0) {
-        results = results.filter((car) => {
-          const carLuggageMatch = car.luggage.match(/\d+/);
-          if (carLuggageMatch) {
-            const carLuggageCapacity = parseInt(carLuggageMatch[0]);
-            return carLuggageCapacity >= luggageCount;
-          }
-          return true;
+      // Adicionar paragens se existirem
+      if (Array.isArray(stopsCoords)) {
+        stopsCoords.forEach(c => {
+          if (c) validCoords.push({ lat: c[0], lng: c[1] });
         });
       }
-    }
-  }
 
-  if (filters.type === "transfer") {
-    const distance = await calculateDistance(filters.pickup, filters.dropoff);
-    results = results.map((car) => {
-      const catInfo = categoriesData.find((c) => c.id === car.type);
-      const usedRate =
-        car.pricePerKm || (catInfo ? (catInfo as any).pricePerKm : 1000);
-      const totalPrice = Math.round(distance * usedRate);
-
-      const currentExtras = car.extras || [];
-      const updatedExtras = currentExtras.includes("driver")
-        ? currentExtras
-        : [...currentExtras, "driver"];
-
-      return {
-        ...car,
-        price: totalPrice,
-        distanceString: `${distance} km`,
-        pricePerKm: usedRate,
-        hasAC: true,
-        extras: updatedExtras,
-      };
-    });
-  }
-
-  if (filters.spec && filters.spec.length > 0) {
-    results = results.filter((car) => {
-      const needsAC = filters.spec?.includes("ac");
-      return needsAC ? car.hasAC : true;
-    });
-  }
-
-  if (filters.extras && filters.extras.length > 0) {
-    results = results.filter((car) =>
-      filters.extras?.every((extra) => car.extras?.includes(extra)),
-    );
-  }
-
-  if (filters.mileage && filters.mileage.length > 0)
-    results = results.filter((car) => filters.mileage?.includes(car.mileage));
-
-  if (filters.price_range && filters.price_range.length > 0) {
-    results = results.filter((car) => {
-      return filters.price_range?.some((range) => {
-        const p = car.price;
-        if (range === "0-50000") return p <= 50000;
-        if (range === "50000-100000") return p > 50000 && p <= 100000;
-        if (range === "100000-150000") return p > 100000 && p <= 150000;
-        if (range === "150000-200000") return p > 150000 && p <= 200000;
-        if (range === "200000+") return p > 200000;
-        return false;
-      });
-    });
-  }
-  const facets: Record<string, Record<string, number>> = {
-    loc: {},
-    sup: {},
-    trans: { automatico: 0, manual: 0 },
-    cat: {},
-    spec: { ac: 0 },
-    mileage: { limited: 0, unlimited: 0 },
-    seats: { "4": 0, "5": 0, "6+": 0 },
-    electric: { full: 0, hybrid: 0, "plug-in": 0 },
-    extras: {
-      driver: 0,
-      insurance: 0,
-      limpeza: 0,
-      wifi: 0,
-      gps: 0,
-      baby_seat: 0,
-    },
-    price_range: {
-      "0-50000": 0,
-      "50000-100000": 0,
-      "100000-150000": 0,
-      "150000-200000": 0,
-      "200000+": 0,
-    },
-    score: { "9": 0, "8": 0, "7": 0 },
-    pay: { now: 0, pickup: 0 },
-    deposit: { "0-6250": 0, "6250-12500": 0, "12500+": 0 },
-    fuel: { like: 0 },
-  };
-
-  const baseForFacets = filters.pickup
-    ? carsData
-        .filter((car) => {
-          // Suporte para ambos os formatos de disponibilidade
-          if (car.availableFor) {
-            if (searchType === "rental") {
-              if (car.availableFor !== "rental" && car.availableFor !== "both")
-                return false;
-            } else {
-              if (
-                car.availableFor !== "transfer" &&
-                car.availableFor !== "both"
-              )
-                return false;
-            }
-          } else if ((car as any).serviceTypes) {
-            if (!(car as any).serviceTypes.includes(searchType)) return false;
-          } else {
-            return false;
-          }
-
-          const q = filters.pickup!.toLowerCase();
-          const keywords = q.split(/[\s,]+/).filter((k) => k.length >= 3);
-          const locName = (car.locationName || "").toLowerCase();
-          const carName = car.name.toLowerCase();
-
-          return (
-            locName.includes(q) ||
-            q.includes(locName) ||
-            carName.includes(q) ||
-            keywords.some((k) => locName.includes(k))
-          );
-        })
-        .filter((car) => {
-          if (car.availableFor) {
-            if (searchType === "rental")
-              return (
-                car.availableFor === "rental" || car.availableFor === "both"
-              );
-            return (
-              car.availableFor === "transfer" || car.availableFor === "both"
-            );
-          }
-          if ((car as any).serviceTypes) {
-            return (car as any).serviceTypes.includes(searchType);
-          }
-          return false;
-        })
-    : carsData.filter((car) => {
-        if (car.availableFor) {
-          if (searchType === "rental")
-            return car.availableFor === "rental" || car.availableFor === "both";
-          return car.availableFor === "transfer" || car.availableFor === "both";
-        }
-        if ((car as any).serviceTypes) {
-          return (car as any).serviceTypes.includes(searchType);
-        }
-        return false;
-      });
-
-  baseForFacets.forEach((car) => {
-    if (car.transmission) {
-      const tKey = car.transmission.toLowerCase();
-      facets.trans[tKey] = (facets.trans[tKey] || 0) + 1;
-    }
-
-    if (car.supplier) {
-      facets.sup[car.supplier] = (facets.sup[car.supplier] || 0) + 1;
-    }
-
-    if (car.locationType) {
-      facets.loc[car.locationType] = (facets.loc[car.locationType] || 0) + 1;
-    }
-
-    facets.cat[car.type] = (facets.cat[car.type] || 0) + 1;
-
-    const seatKey = car.seats >= 6 ? "6+" : car.seats.toString();
-    facets.seats[seatKey] = (facets.seats[seatKey] || 0) + 1;
-    if (car.hasAC) facets.spec.ac++;
-
-    if (car.mileage)
-      facets.mileage[car.mileage] = (facets.mileage[car.mileage] || 0) + 1;
-
-    if (car.score >= 9) facets.score["9"] = (facets.score["9"] || 0) + 1;
-    if (car.score >= 8) facets.score["8"] = (facets.score["8"] || 0) + 1;
-    if (car.score >= 7) facets.score["7"] = (facets.score["7"] || 0) + 1;
-
-    facets.pay["now"] = (facets.pay["now"] || 0) + 1;
-
-    if (car.fuelPolicy)
-      facets.fuel[car.fuelPolicy] = (facets.fuel[car.fuelPolicy] || 0) + 1;
-
-    if (car.deposit <= 100000)
-      facets.deposit["0-6250"] = (facets.deposit["0-6250"] || 0) + 1;
-    else if (car.deposit <= 250000)
-      facets.deposit["6250-12500"] = (facets.deposit["6250-12500"] || 0) + 1;
-    else facets.deposit["12500+"] = (facets.deposit["12500+"] || 0) + 1;
-
-    const p = car.price;
-    if (p <= 50000)
-      facets.price_range["0-50000"] = (facets.price_range["0-50000"] || 0) + 1;
-    else if (p <= 100000)
-      facets.price_range["50000-100000"] =
-        (facets.price_range["50000-100000"] || 0) + 1;
-    else if (p <= 150000)
-      facets.price_range["100000-150000"] =
-        (facets.price_range["100000-150000"] || 0) + 1;
-    else if (p <= 200000)
-      facets.price_range["150000-200000"] =
-        (facets.price_range["150000-200000"] || 0) + 1;
-    else
-      facets.price_range["200000+"] = (facets.price_range["200000+"] || 0) + 1;
-
-    if (car.extras)
-      car.extras.forEach(
-        (extra) => (facets.extras[extra] = (facets.extras[extra] || 0) + 1),
-      );
-  });
-
-  if (filters.sortBy?.includes("Preço"))
-    results.sort((a, b) => a.price - b.price);
-
-  const totalCount = results.length;
-  const paginatedResults = results.slice(offset, offset + limit).map((car) => {
-    const included: string[] = ["CANCELAMENTO GRATUITO"];
-
-    if (searchType === "transfer") {
-      included.push("MOTORISTA PROFISSIONAL");
-      included.push("AR-CONDICIONADO");
-      included.push("TAXAS INCLUSAS");
+      validCoords.push({ lat: destCoords[0], lng: destCoords[1] });
     } else {
-      included.push("SEGURO INCLUSO NO PREÇO");
+      // Fallback: Geocoding tradicional (lento)
+      console.log("🐌 [DISTANCE] Coordenadas ausentes. Usando geocoding lento...");
+      const coords = await Promise.all(allWaypoints.map(w => getCoords(w)));
+      validCoords = coords.filter((c): c is { lat: number; lng: number } => c !== null);
     }
 
-    return {
-      ...car,
-      includedServices: included,
-    };
+    if (validCoords.length < 2) {
+      console.warn("⚠️ [DISTANCE] Coordenadas insuficientes para calcular rota real. Usando padrão.");
+      return 30 + (stops.length * 10);
+    }
+
+    // 2. Usar ORS Directions
+    const route = await orsDirections(validCoords);
+
+    if (route) {
+      const distanceInKm = parseFloat((route.distance / 1000).toFixed(1)) || 0.1;
+      console.log(`✅ [DISTANCE] Distância total ORS: ${distanceInKm} km`);
+      return distanceInKm;
+    }
+
+    // 3. Fallback to OSRM if ORS fails
+    console.log(`📡 [DISTANCE] Fallback para OSRM...`);
+    const coordsString = validCoords.map(c => `${c.lng},${c.lat}`).join(";");
+    const osrmUrl = `http://router.project-osrm.org/route/v1/driving/${coordsString}?overview=false`;
+
+    const osrmRes = await fetch(osrmUrl).then(r => r.json());
+
+    if (osrmRes.code === "Ok" && osrmRes.routes && osrmRes.routes.length > 0) {
+      const distanceInMeters = osrmRes.routes[0].distance;
+      const distanceInKm = parseFloat((distanceInMeters / 1000).toFixed(1)) || 0.1;
+      console.log(`✅ [DISTANCE] Distância total OSRM: ${distanceInKm} km`);
+      return distanceInKm;
+    }
+
+    return 30 + (stops.length * 10);
+  } catch (err) {
+    console.error("❌ [DISTANCE] Erro ao calcular distância:", err);
+    return 30 + (stops.length * 10);
+  }
+}
+
+/**
+ * REUSABLE PRICING LOGIC
+ */
+function calculateCarPricing(
+  car: Car,
+  searchType: string,
+  diffDays: number,
+  currentDistance: number,
+  services: any[],
+  classPrices: any[],
+  vehiclePrices: any[],
+  allExtras: any[] = [],
+  selectedExtraIds: string[] = []
+): any {
+  const partnerId = (car as any).partner_id;
+  const partnerService = services.find((s: any) => {
+    const sName = s.name.toLowerCase();
+    const sType = searchType.toLowerCase();
+    const isMatch =
+      (sType === "rental" && (sName === "rental" || sName === "aluguer" || s.billing_type === "per_day")) ||
+      (sType === "transfer" && (sName === "transfer" || sName === "transfers" || s.billing_type === "per_km"));
+
+    // Check if service belongs to partner (or is global/template)
+    const partnerMatch = (s.partner_id === partnerId || s.partner_id === null || !s.partner_id);
+
+    return partnerMatch && isMatch;
   });
 
-  console.log("--- [SEARCH RESPONSE] ---");
-  console.log(`Found: ${totalCount} cars`);
-  if (totalCount === 0)
-    console.log(`Reason: ${filterReason || "No cars match the core criteria"}`);
-  console.log(
-    `Paged: ${paginatedResults.length} (Off: ${offset}, Lim: ${limit})`,
-  );
-  console.log("-------------------------\n");
+  if (!partnerService) return null;
 
-  const seenSuppliers = new Set();
-  const suppliers = (carsData as any[]).reduce((acc: any[], car) => {
-    if (!seenSuppliers.has(car.supplier)) {
-      seenSuppliers.add(car.supplier);
-      acc.push({
-        id: car.supplier,
-        name: car.supplier,
-        logo: car.supplierLogo,
-      });
-    }
-    return acc;
-  }, []);
-
-  const response: SearchResponse = {
-    results: paginatedResults,
-    totalCount,
-    facets,
-    suppliers,
-  };
-
-  if (recommendationInfo) {
-    response.recommendationInfo = recommendationInfo;
+  // RELAXED CHECK: If vehicle has services defined, check if this service is supported
+  // If no services defined, allow all services (backward compatibility)
+  const vehicleServices = Array.isArray((car as any).services) ? (car as any).services : [];
+  if (vehicleServices.length > 0 && !vehicleServices.includes(partnerService.id)) {
+    console.log(`⛔ [SERVICE-CHECK] Car ${car.id} does not support service ${partnerService.id} (${partnerService.name}). Linked services: [${vehicleServices}]`);
+    return null;
   }
 
-  return response;
+  const isDistanceBased = partnerService.billing_type === "per_km";
+  let usedRate = 18000;
+
+  const vsp = vehiclePrices.find((p: any) => p.service_id === partnerService.id && p.vehicle_id === car.id);
+  const cp = classPrices.find((p: any) => p.service_id === partnerService.id && p.vehicle_class_id === car.type);
+
+  usedRate = (vsp && vsp.price) ? Number(vsp.price) : (cp ? Number(cp.price) : 18000);
+
+  const minQty = Number(partnerService.min_quantity || 1);
+  let baseTotal = 0;
+  if (isDistanceBased) {
+    const unitsToCharge = Math.max(currentDistance || 0, minQty);
+    baseTotal = Math.round(unitsToCharge * usedRate);
+    console.log(`📏 [PRICING] Distance-based: actual=${currentDistance}km, min=${minQty}km, charging=${unitsToCharge}km`);
+  } else {
+    const unitsToCharge = Math.max(diffDays, minQty);
+    baseTotal = Math.round(unitsToCharge * usedRate);
+    console.log(`📅 [PRICING] Day-based: actual=${diffDays}d, min=${minQty}d, charging=${unitsToCharge}d`);
+  }
+
+  // Mandatory Extras Calculation (Include ALL available extras by default as per business rule)
+  let extrasTotal = 0;
+
+  // 1. Process all vehicle extras (available for this vehicle/partner)
+  const vehicleExtras = (car as any).extrasObjects || [];
+  for (const ex of vehicleExtras) {
+    const exPrice = Number(ex.price || 0);
+    const isPerDay = ex.per_day === true || ex.perDay === true;
+    const calcPrice = isPerDay ? exPrice * diffDays : exPrice;
+
+    // Add ALL available extras to total by default
+    extrasTotal += calcPrice;
+  }
+
+  // 2. Include other extras explicitly selected by the user that might not be in vehicleExtras
+  if (Array.isArray(selectedExtraIds) && selectedExtraIds.length > 0) {
+    const selectedExtras = (allExtras || []).filter((e: any) => selectedExtraIds.includes(e.id));
+    for (const ex of selectedExtras) {
+      // skip if already processed in vehicleExtras
+      if (vehicleExtras.find((ve: any) => ve.id === ex.id)) continue;
+
+      const exPrice = Number(ex.price || 0);
+      const isPerDay = ex.per_day === true || ex.perDay === true;
+      const calcPrice = isPerDay ? exPrice * diffDays : exPrice;
+      extrasTotal += calcPrice;
+    }
+  }
+
+  const totalPrice = baseTotal + extrasTotal;
+  try {
+    console.log(`🔢 [PRICING] car=${car.id} partnerService=${partnerService?.id} billing=${partnerService?.billing_type} usedRate=${usedRate} baseTotal=${baseTotal} extrasTotal=${extrasTotal} totalPrice=${totalPrice}`);
+    // Detailed extras listing for debugging
+    try {
+      const vehicleExtrasDebug = (vehicleExtras || []).map((e: any) => ({ id: e.id, name: e.name, price: e.price, per_day: e.per_day }));
+      const selectedExtrasDebug = (allExtras || []).filter((e: any) => selectedExtraIds.includes(e.id)).map((e: any) => ({ id: e.id, name: e.name, price: e.price, per_day: e.per_day }));
+      console.log(`🔢 [PRICING-DETAILS] car=${car.id} vehicleExtras=${JSON.stringify(vehicleExtrasDebug)} selectedExtras=${JSON.stringify(selectedExtrasDebug)}`);
+    } catch (e) {
+      // ignore extras debug errors
+    }
+  } catch (e) {
+    // ignore logging errors
+  }
+
+  return {
+    ...car,
+    price: usedRate,
+    totalPrice,
+    baseTotal,
+    extrasTotal,
+    pricePerUnit: usedRate,
+    billingType: partnerService.billing_type,
+    distance: isDistanceBased ? currentDistance : undefined,
+    distanceString: isDistanceBased ? `${currentDistance} km` : undefined,
+  };
+}
+
+async function searchCarsInternal(filters: SearchFilters): Promise<SearchResponse> {
+  console.log('🔎 [SEARCH] Iniciando pesquisa com filtros:', JSON.stringify(filters));
+  console.log(`🔎 [SEARCH] Paginação: offset=${filters.offset}, limit=${filters.limit}`);
+
+  const { cars, categories, extras, services, classPrices, vehiclePrices } = await getBaseData();
+
+  if (!filters.pickup) {
+    console.log('⚠️ [SEARCH] Nenhum local de levantamento fornecido. Retornando resultados vazios.');
+    return {
+      results: [],
+      totalCount: 0,
+      facets: { cat: {}, trans: {}, sup: {}, seats: {} },
+      suppliers: [],
+    };
+  }
+
+  console.log(`📋 [SEARCH] Total de carros disponíveis: ${cars.length}`);
+
+  const searchType = filters.type || "rental";
+  let results = cars.filter(car => {
+    if (searchType === "rental") return car.availableFor === "rental" || car.availableFor === "both";
+    return car.availableFor === "transfer" || car.availableFor === "both";
+  });
+
+  const fromDate = filters.from ? new Date(filters.from) : new Date();
+  let toDate = filters.to ? new Date(filters.to) : new Date(fromDate.getTime() + 3 * 86400000);
+
+  if (searchType === "transfer") {
+    // Para transfers, assumimos uma janela de 4 horas de ocupação para evitar conflitos próximos
+    toDate = new Date(fromDate.getTime() + 4 * 3600000);
+  }
+
+  // 1.5 FILTRO DE DISPONIBILIDADE REAL + DISTANCE CALCULATION (PARALLEL)
+  console.log(`📡 [AVAILABILITY] Verificando conflitos de agenda para: ${fromDate.toISOString()} até ${toDate.toISOString()}`);
+
+  let currentDistance = 0;
+  const [busyVehicleIds, calculatedDistance] = await Promise.all([
+    getConflictingBookings(fromDate.toISOString(), toDate.toISOString()),
+    searchType === "transfer" && filters.pickup && filters.dropoff
+      ? calculateDistance(
+        filters.pickup,
+        filters.dropoff,
+        filters.stops || [],
+        filters.pickupCoords,
+        filters.dropoffCoords,
+        filters.stopsCoords
+      )
+      : Promise.resolve(0)
+  ]);
+
+  if (searchType === "transfer") {
+    currentDistance = calculatedDistance;
+  }
+
+  // Marcamos os veículos como ocupados em vez de os removermos, para permitir lista de espera
+  results = results.map(car => ({
+    ...car,
+    isBusy: busyVehicleIds.includes(car.id)
+  }));
+
+  // 1.7 Pontuação de Relevância e Ordenação
+  if (filters.pickup && searchType === "rental") {
+    const q = normalize(filters.pickup);
+    const keywords = q.split(/[\s,]+/).filter(k => k.length > 2);
+
+    const scoredResults = results.map(car => {
+      let score = 0;
+      const loc = normalize(car.locationName || "");
+      const prov = normalize((car as any).partners?.address_province || "");
+      const city = normalize((car as any).partners?.address_city || "");
+
+      if (loc === q) score += 100;
+      else if (loc.startsWith(q) || q.startsWith(loc)) score += 80;
+      else if (loc.includes(q) || q.includes(loc)) score += 60;
+
+      if (city === q) score += 50;
+      else if (city.includes(q) || q.includes(city)) score += 30;
+
+      if (prov === q) score += 20;
+      else if (prov.includes(q) || q.includes(prov)) score += 10;
+
+      keywords.forEach(k => {
+        if (loc.includes(k)) score += 5;
+        if (city.includes(k)) score += 5;
+        if (prov.includes(k)) score += 5;
+      });
+
+      return { car, score };
+    });
+
+    results = scoredResults
+      .filter(item => item.score > 0)
+      .sort((a, b) => {
+        // 1. Disponibilidade primeiro (Recomendação implícita)
+        if (a.car.isBusy && !b.car.isBusy) return 1;
+        if (!a.car.isBusy && b.car.isBusy) return -1;
+        // 2. Pontuação de relevância
+        return b.score - a.score;
+      })
+      .map(item => item.car);
+  } else {
+    // Para Transfers ou sem pickup, ordenamos apenas por disponibilidade
+    results = [...results].sort((a, b) => {
+      if (a.isBusy && !b.isBusy) return 1;
+      if (!a.isBusy && b.isBusy) return -1;
+      return 0;
+    });
+  }
+
+  // Filters (Location, Category, Trans, etc.)
+
+  if (filters.categories && filters.categories.length > 0) {
+    console.log(`🔎 [FILTER] Applying Category filter: ${filters.categories}`);
+    results = results.filter(car => filters.categories!.includes(car.type));
+    console.log(`   Running Total: ${results.length}`);
+  }
+  if (filters.trans && filters.trans.length > 0) {
+    console.log(`🔎 [FILTER] Applying Transmission filter: ${filters.trans}`);
+    results = results.filter(car => {
+      const trans = car.transmission === "automatic" ? "automatico" : "manual";
+      return filters.trans!.includes(trans);
+    });
+    console.log(`   Running Total: ${results.length}`);
+  }
+  if (filters.sup && filters.sup.length > 0) {
+    console.log(`🔎 [FILTER] Applying Supplier filter: ${filters.sup}`);
+    results = results.filter(car => filters.sup!.includes((car as any).partner_id));
+    console.log(`   Running Total: ${results.length}`);
+  }
+  if (filters.seats && filters.seats.length > 0) {
+    console.log(`🔎 [FILTER] Applying Seats filter: ${filters.seats}`);
+    results = results.filter(car => {
+      const s = car.seats || 0;
+      if (filters.seats!.includes("6+") && s >= 6) return true;
+      return filters.seats!.includes(String(s));
+    });
+    console.log(`   Running Total: ${results.length}`);
+  }
+  if (filters.extras && filters.extras.length > 0) {
+    console.log(`🔎 [FILTER] Applying Extras filter: ${filters.extras}`);
+    results = results.filter(car => {
+      const hasAll = (car.extras || []).every((exId: string) => filters.extras!.includes(exId));
+      if (!hasAll) console.log(`   ❌ Car ${car.id} rejected by extras filter`);
+      return hasAll;
+    });
+    console.log(`   Running Total: ${results.length}`);
+  }
+
+  let recommendationInfo = null;
+  if (searchType === "transfer") {
+    const passengerCount = Number(filters.passengers || 0);
+    const luggageCount = Number(filters.luggage || 0);
+    if (passengerCount > 0) results = results.filter(car => (car.seats || 0) >= passengerCount);
+    if (luggageCount > 0) results = results.filter(car => ((car.luggage_big || 0) + (car.luggage_small || 0)) >= luggageCount);
+
+    if (results.length === 0 && (passengerCount > 4 || luggageCount > 4)) {
+      recommendationInfo = {
+        needsMultiple: true,
+        message: "Para este volume de passageiros/bagagem, recomendamos a reserva de múltiplos veículos.",
+        totalPassengers: passengerCount,
+        totalLuggage: luggageCount,
+        vehiclesNeeded: Math.max(Math.ceil(passengerCount / 4), Math.ceil(luggageCount / 4)),
+        maxSeatsPerVehicle: 4,
+        maxLuggagePerVehicle: 4
+      };
+      results = cars.filter(car => (car.availableFor === "transfer" || car.availableFor === "both"));
+    }
+  }
+
+  // const fromDate = filters.from ? new Date(filters.from) : new Date(); // REMOVED DUPLICATE
+  // const toDate = filters.to ? new Date(filters.to) : new Date(Date.now() + 3 * 86400000); // REMOVED DUPLICATE
+  let diffDays = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 3600 * 24)) || 1;
+  if (searchType === "transfer") diffDays = 1;
+
+  const baseResults: any[] = [];
+  for (const car of results) {
+    const pricedCar = calculateCarPricing(car, searchType, diffDays, currentDistance, services, classPrices, vehiclePrices, extras, filters?.extras || [] as any);
+    if (pricedCar) {
+      baseResults.push(pricedCar);
+    } else {
+      console.log(`❌ [PRICING] Car ${car.id} rejected by pricing/service check`);
+    }
+  }
+
+  // Calculate Facets
+  const facets: Record<string, Record<string, number>> = {
+    cat: {},
+    trans: {},
+    sup: {},
+    seats: {},
+  };
+
+  baseResults.forEach(car => {
+    // Category facets
+    const catId = car.type;
+    if (catId) {
+      facets.cat[catId] = (facets.cat[catId] || 0) + 1;
+    }
+
+    // Transmission facets
+    const trans = car.transmission === "automatic" ? "automatico" : "manual";
+    facets.trans[trans] = (facets.trans[trans] || 0) + 1;
+
+    // Supplier facets
+    const supId = car.partner_id;
+    if (supId) {
+      facets.sup[supId] = (facets.sup[supId] || 0) + 1;
+    }
+
+    // Seats facets
+    const seats = String(car.seats);
+    let seatKey = seats;
+    if (Number(seats) >= 6) seatKey = "6+";
+    facets.seats[seatKey] = (facets.seats[seatKey] || 0) + 1;
+
+    // Extras facets
+    const carExtras = car.extras || [];
+    carExtras.forEach((exId: string) => {
+      facets.extras = facets.extras || {};
+      facets.extras[exId] = (facets.extras[exId] || 0) + 1;
+    });
+  });
+
+  console.log(`🎉 [SEARCH] Retornando ${baseResults.length} resultados totais`);
+  console.log(`📄 [SEARCH] Página atual: ${baseResults.slice(filters.offset || 0, (filters.offset || 0) + (filters.limit || 10)).length} resultados`);
+
+  return {
+    results: baseResults.slice(filters.offset || 0, (filters.offset || 0) + (filters.limit || 10)),
+    totalCount: baseResults.length,
+    facets,
+    suppliers: [], // Could be populated if needed, but FilterSidebar uses baseData or facets
+    recommendationInfo,
+  };
+}
+
+export async function searchCars(filters: SearchFilters): Promise<SearchResponse> {
+  return createPublicAction("SearchCars", async (f: SearchFilters) => await searchCarsInternal(f), filters);
 }
 
 export async function getSystemDataInternal() {
+  const { categories, extras, services } = await getBaseData();
   return {
-    categories: categoriesData,
-    extras: extrasData,
+    categories: categories.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      label: c.name,
+      description: c.description,
+      icon: c.icon
+    })),
+    extras: extras.map((e: any) => ({
+      id: e.id,
+      name: e.name,
+      description: e.description,
+      price: e.price,
+      type: e.type,
+      partnerId: e.partner_id,
+      perDay: e.per_day,
+    })),
+    services,
   };
 }
 
-// --- Public Server Actions ---
-
-export async function searchCars(
-  filters: SearchFilters,
-): Promise<SearchResponse> {
-  return createPublicAction(
-    "SearchCars",
-    async (f: SearchFilters) => {
-      // Envolver em unstable_cache para performance
-      const getCachedCars = unstable_cache(
-        async (innerFilters: SearchFilters) => {
-          return await searchCarsInternal(innerFilters);
-        },
-        ["search-cars-api"],
-        { revalidate: 60, tags: ["cars"] },
-      );
-      return getCachedCars(f);
-    },
-    filters,
-  );
-}
-
 export async function getSystemData() {
-  return createPublicAction(
-    "GetSystemData",
-    async () => {
-      const getCachedData = unstable_cache(
-        async () => {
-          return await getSystemDataInternal();
-        },
-        ["system-data-api"],
-        { revalidate: 3600, tags: ["system"] },
-      );
-      return getCachedData();
-    },
-    {},
-  );
+  return createPublicAction("GetSystemData", async () => await getSystemDataInternal(), {});
 }
 
 export async function getCarById(id: string): Promise<Car | undefined> {
-  return createPublicAction(
-    "GetCarById",
-    async (carId: string) => {
-      return (carsData as Car[]).find((car) => car.id === carId);
-    },
-    id,
-  );
+  return createPublicAction("GetCarById", async (carId: string) => {
+    const { cars } = await getBaseData();
+    return cars.find((c: any) => c.id === carId);
+  }, id);
 }
 
-export async function getCarsByIds(ids: string[]): Promise<Car[]> {
-  return createPublicAction(
-    "GetCarsByIds",
-    async (carIds: string[]) => {
-      return (carsData as Car[]).filter((car) => carIds.includes(car.id));
-    },
-    ids,
-  );
+export async function getCarsByIds(ids: string[], searchContext?: SearchFilters): Promise<Car[]> {
+  return createPublicAction("GetCarsByIds", async (carIds: string[]) => {
+    const { cars, extras, services, classPrices, vehiclePrices } = await getBaseData();
+    const filtered = cars.filter((c: any) => carIds.includes(c.id));
+
+    if (!searchContext) return filtered;
+
+    const searchType = searchContext.type || "rental";
+    const fromDate = searchContext.from ? new Date(searchContext.from) : new Date();
+    const toDate = searchContext.to ? new Date(searchContext.to) : new Date(Date.now() + 3 * 86400000);
+    let diffDays = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 3600 * 24)) || 1;
+    if (searchType === "transfer") diffDays = 1;
+
+    let distance = 30;
+    if (searchType === "transfer" && searchContext.pickup && searchContext.dropoff) {
+      distance = await calculateDistance(
+        searchContext.pickup,
+        searchContext.dropoff,
+        searchContext.stops || [],
+        searchContext.pickupCoords,
+        searchContext.dropoffCoords,
+        searchContext.stopsCoords
+      );
+    }
+
+    return filtered.map(car => calculateCarPricing(car, searchType, diffDays, distance, services, classPrices, vehiclePrices, extras, (searchContext as any)?.extras || [])).filter(Boolean);
+  }, ids);
 }

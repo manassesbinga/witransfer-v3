@@ -1,9 +1,16 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Search, MapPin, X, Loader2 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
 import { getLocalitySuggestions } from "@/actions/public/locations";
+import { Search, MapPin, X, Loader2, Map as MapIcon } from "lucide-react";
+
+// Import MapPickerModal dynamically with SSR disabled
+const MapPickerModal = dynamic(
+  () => import("./map-picker-modal").then((mod) => mod.MapPickerModal),
+  { ssr: false }
+);
 
 interface LocationAutocompleteProps {
   value: string;
@@ -16,7 +23,8 @@ interface LocationAutocompleteProps {
   inputClassName?: string;
   labelClassName?: string;
   dark?: boolean;
-  onSelect?: (value: string) => void;
+  onSelect?: (value: string, lat?: number, lng?: number) => void;
+  showMap?: boolean;
 }
 
 export function LocationAutocomplete({
@@ -31,10 +39,12 @@ export function LocationAutocomplete({
   labelClassName,
   dark = false,
   onSelect,
+  showMap = false,
 }: LocationAutocompleteProps) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isMapOpen, setIsMapOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const requestIdRef = useRef(0);
 
@@ -73,7 +83,7 @@ export function LocationAutocomplete({
         setSuggestions([]);
         setIsOpen(false);
       }
-    }, 300); // 300ms debounce
+    }, 400); // Debounce set to 400ms to reduce API load and improve responsiveness
 
     return () => clearTimeout(timer);
   }, [value]);
@@ -93,8 +103,8 @@ export function LocationAutocomplete({
       <div className="relative group">
         <div
           className={cn(
-            "flex items-center gap-2 lg:gap-3 px-3 rounded-[2px] transition-all",
-            inputClassName || "bg-white h-11",
+            "flex items-center gap-2 lg:gap-3 px-3 rounded-[2px] transition-all border",
+            inputClassName || "bg-white h-11 border-gray-200",
           )}
         >
           <Icon
@@ -117,15 +127,41 @@ export function LocationAutocomplete({
             <input
               type="text"
               value={value}
-              onChange={(e) => handleInputChange(e.target.value)}
-              onFocus={() => value.length >= 2 && setIsOpen(true)}
+              onChange={(e) => !showMap && handleInputChange(e.target.value)}
+              onFocus={() => {
+                if (showMap) {
+                  setIsMapOpen(true);
+                } else if (value.length >= 2) {
+                  setIsOpen(true);
+                }
+              }}
+              onClick={() => {
+                if (showMap) setIsMapOpen(true);
+              }}
+              readOnly={showMap}
               placeholder={placeholder}
-              className="w-full bg-transparent outline-none text-xs lg:text-sm font-semibold text-gray-900 placeholder:text-gray-400 truncate leading-tight"
+              className={cn(
+                "w-full bg-transparent outline-none text-xs lg:text-sm font-semibold text-gray-900 placeholder:text-gray-400 truncate leading-tight",
+                showMap && "cursor-pointer"
+              )}
             />
           </div>
           <div className="flex items-center gap-1">
             {loading && (
               <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
+            )}
+            {showMap && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMapOpen(true);
+                }}
+                title="Abrir Mapa"
+                className="p-1 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-[#003580]"
+              >
+                <MapIcon className="h-4 w-4" />
+              </button>
             )}
             {value && (
               <button
@@ -166,6 +202,18 @@ export function LocationAutocomplete({
           </div>
         )}
       </div>
+
+      <MapPickerModal
+        isOpen={isMapOpen}
+        onClose={() => setIsMapOpen(false)}
+        initialValue={value}
+        onSelect={(loc, lat, lng) => {
+          onChange(loc);
+          if (onSelect) onSelect(loc, lat, lng);
+          setIsMapOpen(false);
+        }}
+        title={`Selecionar ${label || 'Localização'}`}
+      />
     </div>
   );
 }

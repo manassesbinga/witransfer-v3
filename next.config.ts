@@ -1,19 +1,24 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  swcMinify: true,
   compress: true,
   productionBrowserSourceMaps: false,
   experimental: {
     reactCompiler: true,
     optimizePackageImports: ["lucide-react"],
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
   },
   images: {
     remotePatterns: [
       {
         protocol: "https",
         hostname: "images.unsplash.com",
+      },
+      {
+        protocol: "https",
+        hostname: "**.supabase.co",
       },
     ],
     formats: ["image/webp", "image/avif"],

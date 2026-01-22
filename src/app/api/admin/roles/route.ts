@@ -1,23 +1,25 @@
 import { NextResponse } from "next/server";
-import { getDB } from "@/lib/db-admin";
+import { supabaseAdmin } from "@/lib/supabase";
+import { toCamelCase } from "@/lib/utils";
 
 export async function POST(request: Request) {
   try {
     const { role, companyId } = await request.json();
-    const db = getDB();
 
-    let roles = db.roles || [];
+    let query = supabaseAdmin.from("roles").select("*");
 
-    if (role !== "SUPER_ADMIN") {
-      roles = roles.filter(
-        (r: any) => r.companyId === companyId || r.companyId === "system",
-      );
+    if (role !== "ADMIN" && role !== "SUPER_ADMIN") {
+      query = query.or(`company_id.eq.${companyId},company_id.is.null`);
     }
 
-    return NextResponse.json(roles);
-  } catch (error) {
+    const { data: roles, error } = await query;
+    if (error) throw error;
+
+    return NextResponse.json(toCamelCase(roles));
+  } catch (error: any) {
+    console.error("Erro ao buscar roles:", error);
     return NextResponse.json(
-      { error: "Erro ao buscar roles." },
+      { error: error.message || "Erro ao buscar roles." },
       { status: 500 },
     );
   }

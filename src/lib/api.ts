@@ -1,20 +1,37 @@
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  (typeof window === "undefined" ? "http://localhost:3000" : "");
-
 export async function apiRequest(endpoint: string, options: RequestInit = {}) {
   // Se o endpoint for relativo, anexa a URL base
-  // No servidor, fetch exige URLs absolutas.
+  let baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
+
+  if (!baseUrl && typeof window === "undefined") {
+    // Tenta detectar o host dinamicamente se estiver no lado do servidor
+    try {
+      const { headers } = require("next/headers");
+      const headerList = await headers();
+      const host = headerList.get("host");
+
+      if (host) {
+        // Usa o protocolo correto baseado no host
+        const protocol = host.includes("localhost") || host.includes("127.0.0.1") ? "http" : "https";
+        baseUrl = `${protocol}://${host}`;
+      } else {
+        baseUrl = "http://127.0.0.1:3000";
+      }
+    } catch (e) {
+      // Fallback para IPv4 local se falhar ao ler headers
+      baseUrl = "http://127.0.0.1:3000";
+    }
+  }
+
   const url = endpoint.startsWith("http")
     ? endpoint
-    : `${API_BASE_URL}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
+    : `${baseUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
 
   const defaultHeaders = {
     "Content-Type": "application/json",
   };
 
   if (typeof window === "undefined") {
-    console.log(`[API-FETCH] Calling: ${url}`);
+    console.log(`[API_FETCH_DEBUG] Server-side fetch to: ${url}`);
   }
 
   try {
@@ -24,6 +41,13 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
         ...defaultHeaders,
         ...options.headers,
       },
+      next: {
+        ...(options as any).next,
+        revalidate: options.cache === "no-store"
+          ? undefined
+          : ((options as any).next?.revalidate ?? 3600),
+        tags: (options as any).next?.tags || [],
+      },
       // Timeout mais longo para ambiente de desenvolvimento (compilação fria)
       signal: AbortSignal.timeout(30000),
     });
@@ -32,15 +56,15 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
         errorData.error ||
-          errorData.message ||
-          `Erro na API: ${response.status}`,
+        errorData.message ||
+        `Erro na API: ${response.status}`,
       );
     }
 
     return response.json();
   } catch (error: any) {
     if (error.name === "TimeoutError" || error.name === "AbortError") {
-      console.error(`[API-TIMEOUT] Request to ${url} timed out after 30s`);
+
       throw new Error(
         "A requisição demorou muito para responder. O servidor pode estar compilando a rota pela primeira vez. Tente atualizar a página.",
       );

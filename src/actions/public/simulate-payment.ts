@@ -21,30 +21,15 @@ export async function simulatePayment(payload: PaymentData) {
     async (data: PaymentData) => {
       // Note: We use process.env.BASE_URL if it exists, otherwise relative
       // In server actions, relative URLs to your own API are best handled with absolute internally or assuming internal routing
-      const baseUrl =
-        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      // Simulação de sucesso imediato sem call externo
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Delay artificial
 
-      const response = await fetch(`${baseUrl}/api/payment/webhook`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...data,
-          status: "success",
-          timestamp: new Date().toISOString(),
-          metadata: {
-            ...data.metadata,
-            processedAt: new Date().toISOString(),
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Falha ao processar pagamento: ${response.statusText}`);
-      }
-
-      return await response.json();
+      return {
+        success: true,
+        transactionId: `tx_${Math.random().toString(36).substr(2, 9)}`,
+        message: "Pagamento simulado com sucesso",
+        status: "completed"
+      };
     },
     payload,
   );

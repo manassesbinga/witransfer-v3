@@ -1,91 +1,107 @@
 import { NextResponse } from "next/server";
-import { getDB, saveDB } from "@/lib/db-admin";
+import { supabaseAdmin } from "@/lib/supabase";
 import { sendEmail } from "@/lib/mail";
 
 export async function POST(request: Request) {
-  console.log("[API] Users Operation Started");
   try {
     const body = await request.json();
-    const { action, role, companyId, data } = body;
-    console.log(
-      `[API] Action: ${action}, Role: ${role}, CompanyId: ${companyId}`,
-    );
-    const db = getDB();
+    const { action, role, partnerId, data } = body;
+    const isSystemAdmin = ["ADMIN", "SUPER_ADMIN", "GERENCIADOR"].includes(role);
 
     if (action === "LIST") {
-      let users = db.users || [];
-      if (role !== "SUPER_ADMIN") {
-        users = users.filter((u: any) => u.companyId === companyId);
+      let query = supabaseAdmin.from("users").select("*");
+      if (!isSystemAdmin) {
+        query = query.eq("partner_id", partnerId);
       }
-      return NextResponse.json(users.map(({ password, ...rest }: any) => rest));
+      const { data: users, error } = await query;
+      if (error) throw error;
+      return NextResponse.json(users.map(({ password_hash, ...rest }: any) => rest));
     }
 
     if (action === "SAVE") {
       const isNew = !data.id;
       if (isNew) {
-        const targetCompanyId =
-          role === "SUPER_ADMIN" ? data.companyId || "system" : companyId;
+        const targetPartnerId = isSystemAdmin ? data.partnerId || null : partnerId;
+
         const newUser = {
-          ...data,
-          id: `user_${Date.now()}`,
-          companyId: targetCompanyId,
-          status: "invited", // Novo campo para rastrear convite
-          createdAt: new Date().toISOString(),
+          email: data.email,
+          full_name: data.name,
+          phone: data.phone,
+          role: data.role || "PARTNER_STAFF",
+          partner_id: targetPartnerId,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         };
 
-        if (!db.users) db.users = [];
-        db.users.push(newUser);
-        saveDB(db);
+        const { data: insertedUser, error } = await supabaseAdmin
+          .from("users")
+          .insert([newUser])
+          .select()
+          .single();
 
-        // Busca o nome da empresa para o e-mail
-        const targetCompany = db.companies?.find(
-          (c: any) => c.id === targetCompanyId,
-        );
-        const companyName = targetCompany?.name || "WiTransfer";
+        if (error) throw error;
 
-        // Envio de convite por e-mail
+        // E-mail sending logic
         if (data.email) {
-          const inviteLink = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/portal/invite?type=user&id=${newUser.id}`;
+          let partnerName = "WiTransfer";
+          if (targetPartnerId) {
+            const { data: partner } = await supabaseAdmin
+              .from("partners")
+              .select("name")
+              .eq("id", targetPartnerId)
+              .single();
+            partnerName = partner?.name || "WiTransfer";
+          }
+
+          const inviteLink = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/login/invite?id=${insertedUser.id}`;
 
           await sendEmail({
             to: data.email,
-            subject: `Convite WiTransfer: Você foi adicionado à empresa ${companyName}`,
+            subject: `Convite WiTransfer: Você foi adicionado à equipa ${partnerName}`,
             template: "invitation",
             templateData: {
               type: "user",
               name: data.name,
-              companyName,
+              companyName: partnerName,
               inviteLink,
             },
-          }).catch((err) =>
-            console.error(
-              "Falha ao enviar e-mail de convite para usuário:",
-              err,
-            ),
-          );
+          }).catch((err) => console.error("Falha ao enviar e-mail de convite:", err));
         }
 
-        const { password, ...safeUser } = newUser;
+        const { password_hash, ...safeUser } = insertedUser;
         return NextResponse.json(safeUser);
       } else {
-        const index = db.users.findIndex((u: any) => u.id === data.id);
-        if (index === -1)
-          return NextResponse.json(
-            { error: "Usuário não encontrado" },
-            { status: 404 },
-          );
+        // UPDATE case
+        // Check permission first
+        const { data: existingUser } = await supabaseAdmin
+          .from("users")
+          .select("partner_id")
+          .eq("id", data.id)
+          .single();
 
-        if (role !== "SUPER_ADMIN" && db.users[index].companyId !== companyId) {
+        if (!existingUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+        if (!isSystemAdmin && existingUser.partner_id !== partnerId) {
           return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
         }
 
-        db.users[index] = {
-          ...db.users[index],
-          ...data,
-          updatedAt: new Date().toISOString(),
+        const updateData = {
+          full_name: data.name,
+          phone: data.phone,
+          role: data.role,
+          is_active: data.isActive,
+          updated_at: new Date().toISOString(),
         };
-        saveDB(db);
-        const { password, ...safeUser } = db.users[index];
+
+        const { data: updatedUser, error: updateError } = await supabaseAdmin
+          .from("users")
+          .update(updateData)
+          .eq("id", data.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        const { password_hash, ...safeUser } = updatedUser;
         return NextResponse.json(safeUser);
       }
     }
@@ -93,9 +109,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
   } catch (error) {
     console.error("Erro na operação de usuários:", error);
-    return NextResponse.json(
-      { error: "Erro na operação de usuários." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Erro na operação de usuários." }, { status: 500 });
   }
 }

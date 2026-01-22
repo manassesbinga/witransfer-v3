@@ -22,7 +22,7 @@ export function Footer() {
                 <span className="text-2xl font-bold tracking-tighter">
                   WiTransfer
                 </span>
-                <span className="text-[10px] uppercase font-semibold text-blue-200 tracking-widest mt-0.5">
+                <span className="text-[10px] font-semibold text-blue-200 tracking-widest mt-0.5">
                   Unique Experience
                 </span>
               </div>
@@ -36,7 +36,7 @@ export function Footer() {
 
           {/* Quicklinks */}
           <div className="space-y-4">
-            <h4 className="text-sm font-bold uppercase tracking-widest text-white/90">
+            <h4 className="text-sm font-bold tracking-widest text-white/90">
               Legal
             </h4>
             <ul className="space-y-2 text-sm text-blue-100/80 font-medium">
@@ -60,7 +60,7 @@ export function Footer() {
 
           {/* Contact */}
           <div className="space-y-4">
-            <h4 className="text-sm font-bold uppercase tracking-widest text-white/90">
+            <h4 className="text-sm font-bold tracking-widest text-white/90">
               Contacto
             </h4>
             <div className="space-y-3 text-sm text-blue-100/80 font-medium">
@@ -81,12 +81,12 @@ export function Footer() {
         </div>
 
         <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-[11px] text-blue-200/60 font-medium uppercase tracking-widest">
+          <p className="text-[11px] text-blue-200/60 font-medium tracking-widest">
             © 2025 WiTransfer Angola. Todos os direitos reservados.
           </p>
           <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-sm">
             <ShieldCheck className="h-4 w-4 text-green-400" />
-            <span className="text-[10px] font-black uppercase tracking-tighter">
+            <span className="text-[10px] font-black tracking-tighter">
               Site 100% Seguro
             </span>
           </div>

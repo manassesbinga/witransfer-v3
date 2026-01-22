@@ -1,59 +1,57 @@
 import { NextResponse } from "next/server";
-import fs from "fs/promises";
-import path from "path";
-
-const DB_PATH = path.join(process.cwd(), "src/data/db.json");
-
-async function getDb() {
-  const data = await fs.readFile(DB_PATH, "utf-8");
-  return JSON.parse(data);
-}
-
-async function saveDb(data: any) {
-  await fs.writeFile(DB_PATH, JSON.stringify(data, null, 2));
-}
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get("id");
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
 
-  if (!id)
-    return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
+    if (!id)
+      return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
 
-  const db = await getDb();
-  const draft = db.drafts.find((d: any) => d.id === id);
+    const { data: draft, error } = await supabaseAdmin
+      .from("drafts")
+      .select("*")
+      .eq("id", id)
+      .single();
 
-  if (!draft)
-    return NextResponse.json(
-      { error: "Rascunho não encontrado" },
-      { status: 404 },
-    );
+    if (error || !draft)
+      return NextResponse.json(
+        { error: "Rascunho não encontrado" },
+        { status: 404 },
+      );
 
-  return NextResponse.json(draft);
+    return NextResponse.json({
+      ...draft,
+      ...(typeof draft.data === 'object' ? draft.data : {})
+    });
+  } catch (error) {
+    console.error("Erro ao buscar rascunho:", error);
+    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
   try {
     const data = await request.json();
-    const db = await getDb();
 
-    const draftId = `DRF-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-    const newDraft = {
-      id: draftId,
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // Expira em 1h
-      ...data,
-    };
+    const { data: newDraft, error } = await supabaseAdmin
+      .from("drafts")
+      .insert([{
+        expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // Expira em 1h
+        data: data, // Assumindo coluna JSONB chamada data ou similar
+      }])
+      .select()
+      .single();
 
-    // Limpar rascunhos expirados para não encher o JSON
-    db.drafts = db.drafts.filter(
-      (d: any) => new Date(d.expiresAt) > new Date(),
-    );
+    if (error) {
+      console.error("Erro ao criar rascunho:", error);
+      throw error;
+    }
 
-    db.drafts.push(newDraft);
-    await saveDb(db);
-
-    return NextResponse.json({ id: draftId });
+    return NextResponse.json({ id: newDraft.id });
   } catch (error) {
+    console.error("Erro ao criar rascunho:", error);
     return NextResponse.json(
       { error: "Falha ao criar rascunho" },
       { status: 500 },

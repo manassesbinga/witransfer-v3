@@ -1,26 +1,27 @@
 "use server";
 
 import { createPublicAction } from "@/middlewares/actions/action-factory";
+import { supabase } from "@/lib/supabase";
 
 /**
- * Example of using the middleware for email verification
+ * Verifica se um email existe na base de dados do Supabase.
  */
 export async function verifyEmail(email: string) {
   return createPublicAction(
     "VerifyEmail",
     async (emailStr: string) => {
-      // Simulate a database check
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const { data, error } = await supabase
+        .from("users")
+        .select("id")
+        .eq("email", emailStr.toLowerCase());
 
-      const exists =
-        emailStr.toLowerCase().includes("witransfer") ||
-        emailStr.toLowerCase().includes("admin");
+      const exists = !!data && data.length > 0;
 
       return {
         exists,
         message: exists
           ? "Bem-vindo de volta!"
-          : "E-mail verificado com sucesso.",
+          : "Este e-mail ainda não está registrado.",
       };
     },
     email,

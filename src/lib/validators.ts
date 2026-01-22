@@ -3,7 +3,10 @@ export function validarEmail(email: string) {
 }
 
 export function validarTelefone(tel: string) {
-    return /^\d{9}$/.test(tel.replace(/\D/g, ""));
+    // Remove todos os caracteres não numéricos exceto o +
+    const cleaned = tel.replace(/[^\d+]/g, "");
+    // Aceita números com 9 a 15 dígitos, com ou sem código de país (+)
+    return /^\+?\d{9,15}$/.test(cleaned);
 }
 
 export function validarData(data: string) {

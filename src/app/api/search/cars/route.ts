@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { SearchFilters } from "@/types/cars";
+import { SearchFilters } from "@/types";
 import { searchCarsInternal } from "@/actions/public/search/cars";
 
 export async function POST(request: Request) {

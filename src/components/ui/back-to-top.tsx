@@ -6,6 +6,8 @@ import { ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+const MotionDiv = motion.div as any;
+
 export function BackToTop() {
   const [isVisible, setIsVisible] = useState(false);
 
@@ -33,7 +35,7 @@ export function BackToTop() {
   return (
     <AnimatePresence>
       {isVisible && (
-        <motion.div
+        <MotionDiv
           initial={{ opacity: 0, scale: 0.5, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.5, y: 20 }}
@@ -53,7 +55,7 @@ export function BackToTop() {
           >
             <ArrowUp className="h-7 w-7 group-hover:-translate-y-1 transition-transform duration-300" />
           </Button>
-        </motion.div>
+        </MotionDiv>
       )}
     </AnimatePresence>
   );

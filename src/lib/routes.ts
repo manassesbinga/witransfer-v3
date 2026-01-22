@@ -14,8 +14,8 @@ export const ROUTES = {
   },
   private: {
     portal: {
-      dashboard: "/portal",
-      invite: "/portal/invite",
+      dashboard: "/login",
+      invite: "/login/invite",
     },
     admin: {
       dashboard: "/admin",
@@ -23,9 +23,9 @@ export const ROUTES = {
       bookings: "/admin/bookings",
       cars: "/admin/cars",
       categories: "/admin/categories",
-      companies: {
-        list: "/admin/companies",
-        details: (id: string) => `/admin/companies/${id}`,
+      partners: {
+        list: "/admin/partners",
+        details: (id: string) => `/admin/partners/${id}`,
       },
       roles: "/admin/roles",
       rules: "/admin/rules",
@@ -42,7 +42,7 @@ export const API_ROUTES = {
     invite: "/api/admin/invite",
     listingBookings: "/api/admin/listing-bookings",
     listingCategories: "/api/admin/listing-categories",
-    listingCompanies: "/api/admin/listing-companies",
+    listingPartners: "/api/admin/listing-partners",
     listingExtras: "/api/admin/listing-extras",
     login: "/api/admin/login",
     roles: "/api/admin/roles",

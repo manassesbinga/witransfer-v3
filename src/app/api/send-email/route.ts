@@ -60,7 +60,7 @@ export async function POST(request: Request) {
         text: text || emailHtml.replace(/<[^>]*>/g, ""),
       });
 
-      console.log(`[MAILER] E-mail enviado para ${to}: ${info.messageId}`);
+
 
       return NextResponse.json({
         success: true,
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
 
     const info = await sendEmail({ to, subject, html, text });
 
-    console.log(`[MAILER] E-mail enviado para ${to}: ${info.messageId}`);
+
 
     return NextResponse.json({
       success: true,
@@ -89,7 +89,7 @@ export async function POST(request: Request) {
       messageId: info.messageId,
     });
   } catch (error: any) {
-    console.error("Nodemailer Error:", error);
+
     return NextResponse.json(
       {
         error: "Erro ao processar o envio de e-mail",

@@ -21,7 +21,7 @@ export default function GlobalLoading() {
         {/* Text Information */}
         <div className="text-center space-y-1 z-10 mt-2">
           <h2 className="text-2xl font-black text-slate-900 tracking-tighter">WiTransfer</h2>
-          <div className="flex items-center gap-2 justify-center text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] ml-1">
+          <div className="flex items-center gap-2 justify-center text-slate-400 font-bold text-[10px] tracking-[0.2em] ml-1">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span>Processando Requisição</span>
           </div>

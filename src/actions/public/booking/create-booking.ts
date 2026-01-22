@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { createPublicAction } from "@/middlewares/actions/action-factory";
+import type { Booking } from "@/types";
 
-export async function createBooking(data: any) {
+export async function createBooking(data: Partial<Booking>) {
   return createPublicAction(
     "CreateBooking",
-    async (bookingData: any) => {
+    async (bookingData: Partial<Booking>) => {
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/bookings`,
         {

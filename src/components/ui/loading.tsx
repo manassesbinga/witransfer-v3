@@ -4,6 +4,8 @@ import { Car, Loader2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
+const MotionDiv = motion.div as any;
+
 interface LoadingProps {
   isVisible: boolean;
   message?: string;
@@ -18,7 +20,7 @@ export function Loading({
   return (
     <AnimatePresence>
       {isVisible && (
-        <motion.div
+        <MotionDiv
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -29,17 +31,17 @@ export function Loading({
               : "fixed inset-0 bg-black/60",
           )}
         >
-          <motion.div
+          <MotionDiv
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             className={cn(
               "flex flex-col items-center gap-4 text-center",
               !inline &&
-                "bg-white p-8 rounded-2xl shadow-2xl max-w-sm w-full mx-4",
+              "bg-white p-8 rounded-2xl shadow-2xl max-w-sm w-full mx-4",
             )}
           >
             <div className="relative">
-              <motion.div
+              <MotionDiv
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="mb-4"
@@ -49,16 +51,16 @@ export function Loading({
                   alt="WiTransfer Logo"
                   className={cn(inline ? "h-6" : "h-12", "mx-auto")}
                 />
-              </motion.div>
+              </MotionDiv>
               <div className="relative">
-                <motion.div
+                <MotionDiv
                   animate={{ x: [-5, 5, -5], rotate: [0, 2, -2, 0] }}
                   transition={{ duration: 2, repeat: Infinity }}
                   className="text-[#1a73e8]"
                 >
                   <Car className={cn(inline ? "h-10 w-10" : "h-16 w-16")} />
-                </motion.div>
-                <motion.div
+                </MotionDiv>
+                <MotionDiv
                   animate={{ rotate: 360 }}
                   transition={{
                     duration: 1.5,
@@ -68,7 +70,7 @@ export function Loading({
                   className="absolute -bottom-1 -right-1 text-[#ffb700]"
                 >
                   <Loader2 className={cn(inline ? "h-5 w-5" : "h-8 w-8")} />
-                </motion.div>
+                </MotionDiv>
               </div>
             </div>
 
@@ -87,7 +89,7 @@ export function Loading({
                 </p>
               )}
               <div className="w-24 lg:w-32 bg-gray-100 h-1 rounded-full overflow-hidden mx-auto mt-2">
-                <motion.div
+                <MotionDiv
                   initial={{ x: "-100%" }}
                   animate={{ x: "100%" }}
                   transition={{ duration: 1.5, repeat: Infinity }}
@@ -98,7 +100,7 @@ export function Loading({
 
             {!inline && (
               <div className="mt-8 pt-8 border-t border-gray-100 w-full">
-                <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">
+                <p className="text-[10px] font-black text-gray-400 tracking-widest mb-4">
                   Parceiros em Angola
                 </p>
                 <div className="flex flex-wrap justify-center gap-4 opacity-40 grayscale">
@@ -125,8 +127,8 @@ export function Loading({
                 </div>
               </div>
             )}
-          </motion.div>
-        </motion.div>
+          </MotionDiv>
+        </MotionDiv>
       )}
     </AnimatePresence>
   );

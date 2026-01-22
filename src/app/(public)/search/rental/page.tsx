@@ -1,42 +1,55 @@
 import { SearchForm } from "@/components/search/form";
 import { SearchPageContent } from "@/components/search/content";
-import { decodeState } from "@/lib/url-state";
+import React, { Suspense } from "react";
 import { searchCars, getSystemData } from "@/actions/public/search/cars";
+import { SearchFilters, SearchResponse, SystemData } from "@/types";
+import { getDraftAction } from "@/actions/public/drafts";
 
 export default async function RentalSearchPage({
   searchParams,
-}: { searchParams: Promise<{ s?: string }> }) {
-  // Inicialização de dados
-  let initialData: any = {};
-  let initialResults: any = null;
-
-  let initialSystemData: any = null;
+}: { searchParams: Promise<{ s?: string; did?: string }> }) {
+  let initialData: SearchFilters = {};
+  let initialResults: SearchResponse | null = null;
+  let initialSystemData: SystemData | null = null;
 
   const params = await searchParams;
+  const draftId = params?.did;
+  const s = params?.s;
 
   try {
-    initialSystemData = await getSystemData();
+    const sys = await getSystemData();
+    initialSystemData = {
+      ...sys,
+      services: sys.services || []
+    } as SystemData;
   } catch (e) {
     console.error(e);
   }
 
-  // Decodifica no backend
-  if (params && params.s) {
-    const decoded = decodeState(params.s);
-    if (decoded) {
-      initialData = decoded;
-      // Perform server-side search if we have valid data
-      if (initialData.pickup) {
-        try {
-          // Ensure type matches page
-          initialData.type = "rental";
-          initialResults = await searchCars(initialData);
-        } catch (e) {
-          console.error("Server-side search failed:", e);
-        }
+  // 1. Load filters from Search ID (Draft)
+  if (draftId) {
+    try {
+      const draft = await getDraftAction(draftId) as any;
+      if (draft) {
+        initialData = draft.search || draft;
       }
+    } catch (err) {
+      console.warn("Failed to load draft in search page:", err);
     }
   }
+
+  // Execute initial search (Removed per user request to only show results on manual click)
+  /*
+  try {
+    initialData.type = "rental";
+    const results = await searchCars(initialData);
+    if (results && results.results) {
+      initialResults = results;
+    }
+  } catch (e) {
+    console.error("Server-side search failed in Rental Page:", e);
+  }
+  */
 
   initialData.type = "rental";
 
@@ -50,12 +63,14 @@ export default async function RentalSearchPage({
 
       <div className="flex-grow relative">
         <main className="flex-grow relative">
-          <SearchPageContent
-            defaultType="rental"
-            initialSearchData={initialData}
-            initialResults={initialResults}
-            initialSystemData={initialSystemData}
-          />
+          <Suspense fallback={<div className="py-12"><div className="container mx-auto px-4"><div className="animate-pulse bg-slate-100 h-6 w-48 mb-4" /></div></div>}>
+            <SearchPageContent
+              defaultType="rental"
+              initialSearchData={initialData}
+              initialResults={initialResults}
+              initialSystemData={initialSystemData}
+            />
+          </Suspense>
         </main>
       </div>
     </div>

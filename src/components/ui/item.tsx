@@ -10,7 +10,8 @@ function ItemGroup({ className, ...props }: React.ComponentProps<"div">) {
     <div
       role="list"
       data-slot="item-group"
-      className={cn("group/item-group flex flex-col", className)}
+      // add vertical gap so list cards have more spacing between them
+      className={cn("group/item-group flex flex-col gap-4", className)}
       {...props}
     />
   );
@@ -40,8 +41,9 @@ const itemVariants = cva(
         muted: "bg-muted/50",
       },
       size: {
-        default: "p-4 gap-4 ",
-        sm: "py-3 px-4 gap-2.5",
+        // Increased default padding to give a bit more height/space between contents
+        default: "p-4 gap-5 min-h-[80px]",
+        sm: "py-3 px-4 gap-3 min-h-[64px]",
       },
     },
     defaultVariants: {

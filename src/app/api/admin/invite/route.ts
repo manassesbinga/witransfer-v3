@@ -1,21 +1,23 @@
 import { NextResponse } from "next/server";
-import { getDB, saveDB } from "@/lib/db-admin";
+import { supabaseAdmin } from "@/lib/supabase";
+import { toCamelCase } from "@/lib/utils";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   const type = searchParams.get("type");
 
-  const db = getDB();
   let invited = null;
 
   if (type === "company") {
-    invited = db.companies?.find((c: any) => c.id === id);
+    const { data } = await supabaseAdmin.from("partners").select("*").eq("id", id).single();
+    invited = data;
   } else {
-    invited = db.users?.find((u: any) => u.id === id);
+    const { data } = await supabaseAdmin.from("users").select("*").eq("id", id).single();
+    invited = data;
   }
 
-  if (!invited || invited.status !== "invited") {
+  if (!invited || (invited.status !== "invited" && invited.status !== "pending")) {
     return NextResponse.json(
       { error: "Convite inválido ou já expirado." },
       { status: 404 },
@@ -23,7 +25,7 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({
-    name: invited.name,
+    name: invited.name || invited.nome,
     email: invited.email,
     type,
   });
@@ -32,29 +34,33 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const { id, type, password } = await request.json();
-    const db = getDB();
 
     if (type === "company") {
-      const index = db.companies.findIndex((c: any) => c.id === id);
-      if (index === -1) throw new Error("Empresa não encontrada");
+      const { error } = await supabaseAdmin
+        .from("partners")
+        .update({
+          status: "active",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", id);
 
-      db.companies[index].status = "active";
-      db.companies[index].activatedAt = new Date().toISOString();
-
-      // Se for empresa, geralmente o admin dela precisa de um usuário inicial
-      // Mas para este fluxo simplificado, apenas ativamos
+      if (error) throw error;
     } else {
-      const index = db.users.findIndex((u: any) => u.id === id);
-      if (index === -1) throw new Error("Usuário não encontrado");
+      const { error } = await supabaseAdmin
+        .from("users")
+        .update({
+          password: password,
+          status: "active",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", id);
 
-      db.users[index].password = password;
-      db.users[index].status = "active";
-      db.users[index].activatedAt = new Date().toISOString();
+      if (error) throw error;
     }
 
-    saveDB(db);
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    console.error("Erro ao processar convite:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
