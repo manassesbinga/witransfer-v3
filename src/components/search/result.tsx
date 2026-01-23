@@ -999,7 +999,7 @@ export function CarResults({
                   key={car.id}
                   onClick={() => toggleOfferSelection(car.id)}
                   className={cn(
-                    "flex items-center gap-3 px-4 h-44 bg-white border border-slate-200 shadow-sm hover:shadow-md hover:bg-slate-50 transition-all cursor-pointer border-l-4 w-full",
+                    "flex flex-col md:flex-row items-start md:items-center gap-4 p-4 md:px-4 md:h-52 bg-white border border-slate-200 shadow-sm hover:shadow-md hover:bg-slate-50 transition-all cursor-pointer border-l-4 w-full",
                     selectedOfferIds.includes(car.id)
                       ? "border-l-primary ring-1 ring-primary/20 bg-primary/5"
                       : "border-l-transparent hover:border-l-primary/30",
@@ -1007,67 +1007,60 @@ export function CarResults({
                   )}
                 >
                   {/* Imagem */}
-                  <div className="w-24 h-28 bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                  <div className="w-full md:w-32 h-40 md:h-32 bg-slate-50 flex-shrink-0 overflow-hidden flex items-center justify-center rounded-sm">
                     <img
                       src={car.image || "/car-placeholder.png"}
                       alt={car.name}
-                      className="w-full h-full object-contain"
+                      className="w-4/5 h-4/5 object-contain"
                     />
                   </div>
 
                   {/* Conteúdo Principal - Centro */}
-                  <div className="flex-1 min-w-0 flex flex-col justify-between h-full py-2">
-                    {/* Nome e Fornecedor removidos daqui — agora exibidos acima do botão à direita */}
-
-                    {/* Compact vehicle info line removed (keeps icon grid below) */}
-
+                  <div className="flex-1 min-w-0 flex flex-col justify-between w-full md:h-full py-0 md:py-2">
                     {/* Informação do veículo */}
-                    <div className="text-xs font-bold text-slate-700 mb-1">Informação do veículo</div>
-                    {/* Especificações - 2 linhas */}
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                      <div className="flex items-center gap-1">
-                        <Users size={14} className="text-slate-500 flex-shrink-0" />
-                        <span className="text-slate-700">{car.seats} passageiros</span>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Informação do veículo</div>
+
+                    {/* Especificações - Grid Progressivo */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-y-3 gap-x-2 md:gap-x-1 text-xs mb-4 md:mb-0">
+                      <div className="flex items-center gap-2">
+                        <Users size={14} className="text-slate-400 flex-shrink-0" />
+                        <span className="text-slate-700 font-bold">{car.seats} <span className="hidden sm:inline">Passageiros</span></span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Zap size={14} className="text-slate-500 flex-shrink-0" />
-                        <span className="text-slate-700">{car.transmission === 'automatic' ? 'Automático' : 'Manual'}</span>
+                      <div className="flex items-center gap-2">
+                        <Zap size={14} className="text-slate-400 flex-shrink-0" />
+                        <span className="text-slate-700 font-bold">{car.transmission === 'automatic' ? 'Auto' : 'Manual'}</span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Luggage size={14} className="text-slate-500 flex-shrink-0" />
-                        <span className="text-slate-700">{car.luggage_big || 0} malas</span>
+                      <div className="flex items-center gap-2">
+                        <Luggage size={14} className="text-slate-400 flex-shrink-0" />
+                        <span className="text-slate-700 font-bold">{car.luggage_big || 0} <span className="hidden sm:inline">Malas</span></span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <MapPin size={14} className="text-slate-500 flex-shrink-0" />
-                        <span className="text-slate-700">{currentType === "transfer" ? (car.distanceString || "S/D") : "Ilimitado"}</span>
+                      <div className="flex items-center gap-2">
+                        <MapPin size={14} className="text-slate-400 flex-shrink-0" />
+                        <span className="text-slate-700 font-bold truncate">
+                          {currentType === "transfer" ? (car.distanceString || "S/D") : "Ilimitado"}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Preço base exibido junto ao botão (removido daqui para evitar duplicação) */}
-
                     {/* Extras disponíveis (mostrar até 4) */}
-                    <div className="mt-2 text-wrap">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-2">
-                        <span>Serviços & Extras Disponíveis</span>
-                        <div className="h-px bg-slate-100 flex-1"></div>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
+                    <div className="mt-auto">
+                      <div className="flex flex-wrap gap-1.5 pt-3 md:pt-0 border-t border-slate-100 md:border-0">
                         {((car as any).extrasObjects || [])
-                          .slice(0, 4)
+                          .slice(0, 3)
                           .map((ex: any) => (
-                            <span key={ex.id} className="text-[10px] bg-white rounded-none px-2 py-1 font-bold text-slate-600 border border-slate-200 flex items-center gap-1.5 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600 group">
-                              <Check size={10} className="text-green-500 group-hover:text-blue-500" />
-                              {ex.name} {ex.price > 0 ? <span className="text-[9px] text-slate-400 font-medium">(AOA {Number(ex.price).toLocaleString()})</span> : <span className="text-[9px] text-green-600 uppercase">Grátis</span>}
+                            <span key={ex.id} className="text-[9px] md:text-[10px] bg-slate-50 rounded-none px-2 py-1 font-bold text-slate-500 border border-slate-100 flex items-center gap-1.5 transition-all">
+                              <Check size={10} className="text-green-500" />
+                              {ex.name}
                             </span>
                           ))}
                       </div>
                     </div>
-
-                    {/* Preço movido para o botão de seleção à direita (inclui extras se houver) */}
                   </div>
 
-                  {/* Botão Seleção com preço (base + seguro + extras) */}
-                  <ActionColumn car={car} />
+                  {/* Botão Seleção - Alinhamento Responsivo */}
+                  <div className="w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0 mt-2 md:mt-0 flex justify-end">
+                    <ActionColumn car={car} />
+                  </div>
                 </div>
               ))}
             </div>
