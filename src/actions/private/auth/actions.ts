@@ -5,65 +5,57 @@ import { redirect } from "next/navigation";
 import { actionMiddleware } from "@/middlewares/actions/action-factory";
 import { apiRequest } from "@/lib/api";
 import { getAdminSessionInternal } from "../session";
-import { unstable_cache, revalidateTag } from "next/cache";
+import { unstable_cache, revalidateTag, unstable_noStore as noStore } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 
 // 1. Define Cached User Fetcher
+// 1. Define Fresh User Fetcher (NO CACHE)
 const getCachedUserProfile = async (userId: string) => {
-  return await unstable_cache(
-    async () => {
-      console.log(`🔍 CACHE MISS: Creating cache for user ${userId}`);
+  console.log(`🔍 FETCH: Getting fresh user profile from DB for ${userId}`);
 
-      const { data: user, error } = await supabaseAdmin
-        .from("users")
-        .select(`
-          id,
-          email,
-          full_name,
-          role,
-          sub_role,
-          partner_id,
-          avatar_url,
-          is_active,
-          partners (
-            status,
-            is_verified,
-            name,
-            avatar_url,
-            logo_url
-          )
-        `)
-        .eq("id", userId)
-        .single();
+  const { data: user, error } = await supabaseAdmin
+    .from("users")
+    .select(`
+      id,
+      email,
+      full_name,
+      role,
+      sub_role,
+      partner_id,
+      avatar_url,
+      is_active,
+      partners (
+        status,
+        is_verified,
+        name,
+        avatar_url,
+        logo_url
+      )
+    `)
+    .eq("id", userId)
+    .single();
 
-      if (error || !user) return null;
+  if (error || !user) return null;
 
-      const p = user.partners as any;
-      const partnerStatus = p ? p.status : "active";
-      const isVerifiedStatus = p ? p.is_verified : false;
-      const isSystemAdmin = ["ADMIN", "SUPER_ADMIN", "GERENCIADOR"].includes(user.role);
-      const isPrincipalPartner = false;
+  const p = user.partners as any;
+  const partnerStatus = p ? p.status : "active";
+  const isVerifiedStatus = p ? p.is_verified : false;
+  const isSystemAdmin = ["ADMIN", "SUPER_ADMIN", "GERENCIADOR"].includes(user.role);
+  const isPrincipalPartner = false;
 
-      return {
-        id: user.id,
-        name: user.full_name,
-        email: user.email,
-        role: user.role,
-        subRole: user.sub_role,
-        partnerId: user.partner_id,
-        avatarUrl: user.avatar_url || (p ? (p.avatar_url || p.logo_url) : null),
-        partnerName: p ? p.name : null,
-        partnerStatus: partnerStatus,
-        isVerified: isSystemAdmin || isVerifiedStatus || isPrincipalPartner,
-        isPrincipal: isPrincipalPartner
-      };
-    },
-    [`user-profile-${userId}`],
-    {
-      tags: [`user-profile-${userId}`],
-      revalidate: 3600
-    }
-  )();
+  return {
+    id: user.id,
+    name: user.full_name,
+    email: user.email,
+    role: user.role,
+    subRole: user.sub_role,
+    partnerId: user.partner_id,
+    avatarUrl: user.avatar_url || (p ? (p.avatar_url || p.logo_url) : null),
+    partnerName: p ? p.name : null,
+    partnerStatus: partnerStatus,
+    isVerified: isSystemAdmin || isVerifiedStatus || isPrincipalPartner,
+    isPrincipal: isPrincipalPartner
+  };
 };
 
 export async function loginAdminAction(credentials: any) {
@@ -100,14 +92,14 @@ export async function loginAdminAction(credentials: any) {
 
 export async function getCurrentUserAction() {
   return actionMiddleware("getCurrentUser", async () => {
+    noStore(); // Force the action to be dynamic and skip static generation/caching
     const session = await getAdminSessionInternal();
     if (!session) throw new Error("Não autenticado");
 
-    // Instead of returning just the session (token payload), 
-    // fetch the full cached profile which is guaranteed to have the avatar/name logic
+    // Fetch the profile (revalidate: 0 ensures it's fresh)
     const cachedUser = await getCachedUserProfile(session.id);
 
-    return cachedUser || session; // Fallback to session if cache fails
+    return cachedUser || session;
   }, {});
 }
 

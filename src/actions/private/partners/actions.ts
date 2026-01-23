@@ -353,6 +353,7 @@ export async function getPartnerProfileAction(): Promise<PartnerActionResult<any
     return actionMiddleware(
         "GetPartnerProfile",
         async () => {
+            noStore();
             const session = await getAdminSessionInternal()
             if (!session) throw new Error("Não autenticado")
             const userId = session.id
