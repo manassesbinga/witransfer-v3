@@ -37,11 +37,23 @@ const getCachedUserProfile = async (userId: string) => {
 
   if (error || !user) return null;
 
-  const p = user.partners as any;
+  // Handle Supabase potential array return for joined data
+  const pRaw = user.partners as any;
+  const p = Array.isArray(pRaw) ? pRaw[0] : pRaw;
+
   const partnerStatus = p ? p.status : "active";
-  const isVerifiedStatus = p ? p.is_verified : false;
+  const isVerifiedStatus = p ? (p.is_verified === true) : false;
   const isSystemAdmin = ["ADMIN", "SUPER_ADMIN", "GERENCIADOR"].includes(user.role);
   const isPrincipalPartner = false;
+  const finalIsVerified = isSystemAdmin || isVerifiedStatus || isPrincipalPartner;
+
+  console.log(`----------------------------------------------------------------`);
+  console.log(`🔍 [AUTH] Verificando utilizador: ${user.email}`);
+  console.log(`🏢 [AUTH] Dados do Parceiro encontrados: ${!!p}`);
+  console.log(`✅ [AUTH] DB is_verified: ${p?.is_verified}`);
+  console.log(`⭐ [AUTH] Role: ${user.role} | Admin? ${isSystemAdmin}`);
+  console.log(`🚀 [AUTH] Final isVerified enviado: ${finalIsVerified}`);
+  console.log(`----------------------------------------------------------------`);
 
   return {
     id: user.id,
@@ -53,7 +65,7 @@ const getCachedUserProfile = async (userId: string) => {
     avatarUrl: user.avatar_url || (p ? (p.avatar_url || p.logo_url) : null),
     partnerName: p ? p.name : null,
     partnerStatus: partnerStatus,
-    isVerified: isSystemAdmin || isVerifiedStatus || isPrincipalPartner,
+    isVerified: finalIsVerified,
     isPrincipal: isPrincipalPartner
   };
 };
