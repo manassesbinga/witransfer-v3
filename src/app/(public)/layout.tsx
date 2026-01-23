@@ -12,7 +12,7 @@ export default function HomeLayout({
   const pathname = usePathname();
   const isTransparentPage = pathname === "/" || pathname === "/transfer";
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white overflow-x-hidden">
       <SearchProvider>
         <Suspense fallback={<div className="h-20 bg-[#003580] animate-pulse" />}>
           <Header transparent={isTransparentPage} />

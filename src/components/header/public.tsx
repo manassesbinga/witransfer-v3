@@ -142,7 +142,7 @@ export function Header({ transparent }: { transparent?: boolean }) {
       className={cn(
         "w-full z-50 transition-all duration-300",
         transparent
-          ? "absolute top-0 left-0 bg-transparent pb-40"
+          ? "absolute top-0 left-0 right-0 bg-transparent pb-40"
           : "relative bg-[#003580] pb-3",
       )}
     >

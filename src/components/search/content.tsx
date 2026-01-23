@@ -137,7 +137,7 @@ export function SearchPageContent({
     <>
       <div className="flex-grow relative">
         <main className="flex-grow relative">
-          <div className="w-full py-8 px-4 md:px-6">
+          <div className="w-full py-8 px-0 md:px-6">
             <div className="max-w-[1400px] mx-auto">
               <div className="flex flex-col-reverse lg:flex-row gap-6 lg:gap-8">
                 <div className="flex-1 min-w-0">
