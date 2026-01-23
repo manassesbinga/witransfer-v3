@@ -24,7 +24,8 @@ export async function POST(request: Request) {
           status,
           is_verified,
           name,
-          avatar_url
+          avatar_url,
+          logo_url
         )
       `)
       .eq("email", email)
@@ -93,8 +94,8 @@ export async function POST(request: Request) {
       role: user.role,
       subRole: user.sub_role,
       partnerId: user.partner_id,
-      // Use partner avatar if user avatar is missing and is a partner admin
-      avatarUrl: user.avatar_url || (user.partners ? (user.partners as any).avatar_url : null),
+      // Use partner avatar or logo if user avatar is missing
+      avatarUrl: user.avatar_url || (user.partners ? ((user.partners as any).avatar_url || (user.partners as any).logo_url) : null),
       partnerName: user.partners ? (user.partners as any).name : null,
       partnerStatus: partnerStatus,
       isVerified: isSystemAdmin || isVerifiedStatus || isPrincipalPartner,

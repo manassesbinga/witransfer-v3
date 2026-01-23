@@ -17,28 +17,30 @@ const getCachedUserProfile = async (userId: string) => {
       const { data: user, error } = await supabaseAdmin
         .from("users")
         .select(`
-        id,
-        email,
-        full_name,
-        role,
-        sub_role,
-        partner_id,
-        avatar_url,
-        is_active,
-        partners (
-          status,
-          is_verified,
-          name,
-          avatar_url
-        )
-      `)
+          id,
+          email,
+          full_name,
+          role,
+          sub_role,
+          partner_id,
+          avatar_url,
+          is_active,
+          partners (
+            status,
+            is_verified,
+            name,
+            avatar_url,
+            logo_url
+          )
+        `)
         .eq("id", userId)
         .single();
 
       if (error || !user) return null;
 
-      const partnerStatus = user.partners ? (user.partners as any).status : "active";
-      const isVerifiedStatus = user.partners ? (user.partners as any).is_verified : false;
+      const p = user.partners as any;
+      const partnerStatus = p ? p.status : "active";
+      const isVerifiedStatus = p ? p.is_verified : false;
       const isSystemAdmin = ["ADMIN", "SUPER_ADMIN", "GERENCIADOR"].includes(user.role);
       const isPrincipalPartner = false;
 
@@ -49,9 +51,8 @@ const getCachedUserProfile = async (userId: string) => {
         role: user.role,
         subRole: user.sub_role,
         partnerId: user.partner_id,
-        // Logic similar to login route to ensure consistency
-        avatarUrl: user.avatar_url || (user.partners ? (user.partners as any).avatar_url : null),
-        partnerName: user.partners ? (user.partners as any).name : null,
+        avatarUrl: user.avatar_url || (p ? (p.avatar_url || p.logo_url) : null),
+        partnerName: p ? p.name : null,
         partnerStatus: partnerStatus,
         isVerified: isSystemAdmin || isVerifiedStatus || isPrincipalPartner,
         isPrincipal: isPrincipalPartner
@@ -60,7 +61,7 @@ const getCachedUserProfile = async (userId: string) => {
     [`user-profile-${userId}`],
     {
       tags: [`user-profile-${userId}`],
-      revalidate: 3600 // 1 hour cache
+      revalidate: 3600
     }
   )();
 };

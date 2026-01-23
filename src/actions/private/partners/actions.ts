@@ -1,7 +1,7 @@
 "use server"
 
 import { supabaseAdmin } from "@/lib/supabase"
-import { revalidatePath } from "next/cache"
+import { revalidatePath, revalidateTag } from "next/cache"
 import type { PartnerFormData, ActionResult as PartnerActionResult } from "@/types"
 import { actionMiddleware } from "@/middlewares/actions/action-factory"
 import { hashPassword } from "@/lib/hashing"
@@ -202,15 +202,14 @@ export async function savePartnerProfileAction(
                 address_city: formData.municipio,
                 address_street: formData.rua,
                 address_zip: formData.codigoPostal,
-                // address_country: formData.pais || "Angola", // Removed due to schema cache error
                 employees_count: formData.tamanhoEmpresa,
                 logo_url: formData.logo,
+                avatar_url: formData.logo, // Sync avatar with logo for better UX
                 document_url: formData.documentUrl,
                 updated_at: new Date().toISOString()
             };
 
             // Remove undefined or null fields to avoid schema errors if they're not provided
-            // and prevent clearing existing data with empty strings if it's an "edit"
             const cleanUpdate: any = {};
             Object.keys(updateFields).forEach(key => {
                 const val = updateFields[key];
@@ -227,6 +226,15 @@ export async function savePartnerProfileAction(
                 .eq("id", partnerId)
 
             if (partnerError) throw partnerError
+
+            // 2. IMPORTANT: Update the User Avatar as well so it reflects in the Header immediately
+            if (formData.logo) {
+                console.log("👤 [UPDATE USER] Syncing User Avatar with Partner Logo...");
+                await supabaseAdmin
+                    .from("users")
+                    .update({ avatar_url: formData.logo })
+                    .eq("id", session.id);
+            }
 
             // Update Services
             // 1. Delete existing (simplest strategy for now, or diff)
@@ -245,6 +253,7 @@ export async function savePartnerProfileAction(
                 if (serviceError) console.error("Erro ao salvar serviços:", serviceError)
             }
 
+            revalidateTag(`user-profile-${session.id}`)
             revalidatePath("/partners/settings/profile")
             return { message: "Perfil atualizado com sucesso" }
         },
