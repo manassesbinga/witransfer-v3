@@ -37,7 +37,7 @@ async function getBaseData() {
   console.log(`  - Veículos: ${vehicles.length}`);
   console.log(`  - Categorias: ${categories.length}`);
   console.log(`  - Extras: ${extras.length}`);
-  console.log(`  - Serviços: ${services.length}`);
+  console.log(`  - Serviços: ${services.length} (${services.map((s: any) => s.name).join(", ")})`);
   console.log(`  - Preços de Classes: ${classPrices.length}`);
   console.log(`  - Preços de Veículos: ${vehiclePrices.length}`);
 
@@ -262,8 +262,8 @@ function calculateCarPricing(
     const sName = s.name.toLowerCase();
     const sType = searchType.toLowerCase();
     const isMatch =
-      (sType === "rental" && (sName === "rental" || sName === "aluguer" || s.billing_type === "per_day")) ||
-      (sType === "transfer" && (sName === "transfer" || sName === "transfers" || s.billing_type === "per_km"));
+      (sType === "rental" && (sName.includes("rental") || sName.includes("aluguer") || s.billing_type === "per_day")) ||
+      (sType === "transfer" && (sName.includes("transfer") || sName.includes("transfers") || s.billing_type === "per_km"));
 
     // Check if service belongs to partner (or is global/template)
     const partnerMatch = (s.partner_id === partnerId || s.partner_id === null || !s.partner_id);
@@ -359,8 +359,6 @@ function calculateCarPricing(
 
 export async function searchCarsInternal(filters: SearchFilters): Promise<SearchResponse> {
   console.log('🔎 [SEARCH] Iniciando pesquisa com filtros:', JSON.stringify(filters));
-  console.log(`🔎 [SEARCH] Paginação: offset=${filters.offset}, limit=${filters.limit}`);
-
   const { cars, categories, extras, services, classPrices, vehiclePrices } = await getBaseData();
 
   if (!filters.pickup) {
@@ -373,13 +371,15 @@ export async function searchCarsInternal(filters: SearchFilters): Promise<Search
     };
   }
 
-  console.log(`📋 [SEARCH] Total de carros disponíveis: ${cars.length}`);
+  console.log(`📋 [SEARCH] Total de carros da base: ${cars.length}`);
 
   const searchType = filters.type || "rental";
   let results = cars.filter(car => {
     if (searchType === "rental") return car.availableFor === "rental" || car.availableFor === "both";
     return car.availableFor === "transfer" || car.availableFor === "both";
   });
+
+  console.log(`📋 [SEARCH] Carros após filtro de tipo (${searchType}): ${results.length}`);
 
   const fromDate = filters.from ? new Date(filters.from) : new Date();
   let toDate = filters.to ? new Date(filters.to) : new Date(fromDate.getTime() + 3 * 86400000);
@@ -429,26 +429,26 @@ export async function searchCarsInternal(filters: SearchFilters): Promise<Search
       const city = normalize((car as any).partners?.address_city || "");
 
       if (loc === q) score += 100;
-      else if (loc.startsWith(q) || q.startsWith(loc)) score += 80;
-      else if (loc.includes(q) || q.includes(loc)) score += 60;
-
-      if (city === q) score += 50;
-      else if (city.includes(q) || q.includes(city)) score += 30;
-
-      if (prov === q) score += 20;
-      else if (prov.includes(q) || q.includes(prov)) score += 10;
+      else if (loc.includes(q)) score += 80;
 
       keywords.forEach(k => {
-        if (loc.includes(k)) score += 5;
-        if (city.includes(k)) score += 5;
-        if (prov.includes(k)) score += 5;
+        if (loc.includes(k)) score += 10;
+        if (city.includes(k)) score += 10;
+        if (prov.includes(k)) score += 10;
       });
 
       return { car, score };
     });
 
+    console.log(`📊 [SEARCH] Rental scoring complete. Best score: ${Math.max(...scoredResults.map(s => s.score), 0)}`);
+
+    // If we have scored results, we sort them. 
+    // We only filter out score 0 if there are actually any matches > 0.
+    // This provides a fallback so the user always sees something if the location match is weak.
+    const hasMatches = scoredResults.some(item => item.score > 0);
+
     results = scoredResults
-      .filter(item => item.score > 0)
+      .filter(item => hasMatches ? item.score > 0 : true)
       .sort((a, b) => {
         // 1. Disponibilidade primeiro (Recomendação implícita)
         if (a.car.isBusy && !b.car.isBusy) return 1;
@@ -498,9 +498,10 @@ export async function searchCarsInternal(filters: SearchFilters): Promise<Search
   if (filters.extras && filters.extras.length > 0) {
     console.log(`🔎 [FILTER] Applying Extras filter: ${filters.extras}`);
     results = results.filter(car => {
-      const hasAll = (car.extras || []).every((exId: string) => filters.extras!.includes(exId));
-      if (!hasAll) console.log(`   ❌ Car ${car.id} rejected by extras filter`);
-      return hasAll;
+      const carExtraIds = car.extras || [];
+      const hasAllRequested = filters.extras!.every((requestedId: string) => carExtraIds.includes(requestedId));
+      if (!hasAllRequested) console.log(`   ❌ Car ${car.id} rejected by extras filter. Has: [${carExtraIds}], Requested: [${filters.extras}]`);
+      return hasAllRequested;
     });
     console.log(`   Running Total: ${results.length}`);
   }

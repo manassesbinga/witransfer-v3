@@ -985,23 +985,23 @@ export function CarResults({
         </div>
       ) : (
         // LIST VIEW - Linhas finas
-        <div className="bg-white border border-slate-200 overflow-hidden">
+        <div className="space-y-4">
           {loading ? (
-            <div className="space-y-2 p-4">
+            <div className="flex flex-col gap-4">
               {[1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-20 w-full" />
+                <Skeleton key={i} className="h-44 w-full" />
               ))}
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div className="flex flex-col gap-4">
               {cars.map((car) => (
                 <div
                   key={car.id}
                   onClick={() => toggleOfferSelection(car.id)}
                   className={cn(
-                    "flex items-center gap-3 px-4 h-44 hover:bg-slate-50 transition-all cursor-pointer border-l-4 w-full",
+                    "flex items-center gap-3 px-4 h-44 bg-white border border-slate-200 shadow-sm hover:shadow-md hover:bg-slate-50 transition-all cursor-pointer border-l-4 w-full",
                     selectedOfferIds.includes(car.id)
-                      ? "border-l-primary bg-primary/5"
+                      ? "border-l-primary ring-1 ring-primary/20 bg-primary/5"
                       : "border-l-transparent hover:border-l-primary/30",
                     car.isRecommendedForMultiple && "bg-amber-50/40"
                   )}
