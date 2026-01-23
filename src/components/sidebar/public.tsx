@@ -193,6 +193,15 @@ const FilterSection = ({
   </div>
 );
 
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Filter } from "lucide-react";
+
 export function FilterSidebar({
   facets,
   suppliers = [],
@@ -242,7 +251,7 @@ export function FilterSidebar({
       "mileage",
       "extras",
       "cat",
-      "price",
+      "price_range",
       "seats",
       "score",
       "pay",
@@ -256,31 +265,79 @@ export function FilterSidebar({
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
-  return (
-    <aside className="w-full lg:w-72 flex-shrink-0 hidden lg:flex lg:sticky lg:top-[80px] h-fit max-h-[calc(100vh-80px)] flex-col">
-      <div className="bg-white border-l border-gray-200 shadow-sm overflow-hidden flex flex-col h-full p-2.5">
-        <div className="p-2.5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 flex-shrink-0">
-          <h2 className="text-base font-bold text-gray-900">
-            Filtros
-          </h2>
-          <button
-            onClick={handleClearAll}
-            className="text-[#006ce4] text-xs font-bold hover:underline"
-          >
-            Limpar tudo
-          </button>
-        </div>
+  const activeFilterCount = [
+    "cat", "trans", "sup", "mileage", "price_range", "seats", "score", "pay", "extras"
+  ].reduce((acc, key) => acc + (searchParams.get(key)?.split(",").filter(Boolean).length || 0), 0);
 
-        <FilterContent
-          facets={facets}
-          suppliers={suppliers}
-          categoriesData={categoriesData}
-          extrasData={extrasData}
-          handleFilterChange={handleFilterChange}
-          isChecked={isChecked}
-          handleClearAll={handleClearAll}
-        />
+  return (
+    <>
+      {/* Mobile Sticky Filter Button */}
+      <div className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+        <Sheet>
+          <SheetTrigger asChild>
+            <button className="flex items-center gap-2 bg-[#003580] text-white px-6 py-3 rounded-full font-bold shadow-2xl transition-transform active:scale-95 border border-white/20">
+              <Filter className="w-4 h-4 text-blue-200" />
+              <span>Filtros</span>
+              {activeFilterCount > 0 && (
+                <span className="bg-white text-[#003580] w-5 h-5 rounded-full flex items-center justify-center text-[10px] ml-1">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="h-[85vh] p-0 rounded-t-2xl border-t-0 bg-white">
+            <SheetHeader className="p-4 border-b border-gray-100 flex-row items-center justify-between sticky top-0 bg-white z-10">
+              <SheetTitle className="text-lg font-black tracking-tight flex items-center gap-2">
+                Filtrar Resultados
+              </SheetTitle>
+              <button
+                onClick={handleClearAll}
+                className="text-[#006ce4] text-xs font-bold hover:underline pr-8"
+              >
+                Limpar tudo
+              </button>
+            </SheetHeader>
+            <div className="overflow-y-auto h-full pb-32">
+              <FilterContent
+                facets={facets}
+                suppliers={suppliers}
+                categoriesData={categoriesData}
+                extrasData={extrasData}
+                handleFilterChange={handleFilterChange}
+                isChecked={isChecked}
+                handleClearAll={handleClearAll}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
       </div>
-    </aside>
+
+      {/* Desktop Sidebar */}
+      <aside className="w-full lg:w-72 flex-shrink-0 hidden lg:flex lg:sticky lg:top-[80px] h-fit max-h-[calc(100vh-80px)] flex-col">
+        <div className="bg-white border-l border-gray-200 shadow-sm overflow-hidden flex flex-col h-full p-2.5">
+          <div className="p-2.5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 flex-shrink-0">
+            <h2 className="text-base font-bold text-gray-900">
+              Filtros
+            </h2>
+            <button
+              onClick={handleClearAll}
+              className="text-[#006ce4] text-xs font-bold hover:underline"
+            >
+              Limpar tudo
+            </button>
+          </div>
+
+          <FilterContent
+            facets={facets}
+            suppliers={suppliers}
+            categoriesData={categoriesData}
+            extrasData={extrasData}
+            handleFilterChange={handleFilterChange}
+            isChecked={isChecked}
+            handleClearAll={handleClearAll}
+          />
+        </div>
+      </aside>
+    </>
   );
 }

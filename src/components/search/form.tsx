@@ -443,115 +443,125 @@ export function SearchForm({ type, initialData }: SearchFormProps) {
           : { duration: 0.16, ease: "easeOut" },
         layout: !prefersReducedMotion,
         className:
-          "w-full bg-white rounded-none shadow-lg border border-gray-300 min-h-[80px] lg:h-[80px] flex flex-wrap lg:flex-nowrap items-center justify-center px-2 sm:px-4 py-3 lg:py-0 gap-2 sm:gap-3 lg:gap-4 overflow-visible",
+          "w-full bg-white rounded-none shadow-lg border border-gray-300 flex flex-col lg:flex-row items-stretch lg:items-center justify-center p-3 lg:px-4 lg:py-0 lg:h-[80px] gap-3 lg:gap-4 overflow-visible",
         style: { willChange: "transform, opacity" },
       } as any)}
     >
-      <LocationAutocomplete
-        label={type === "rental" ? "Local de retirada" : "De onde?"}
-        icon={type === "rental" ? undefined : MapPin}
-        color={type === "transfer" ? "text-green-600" : "text-gray-600"}
-        value={pickup}
-        onChange={(v) => {
-          setPickup(v);
-          setIsPickupValid(false);
-        }}
-        onSelect={() => setIsPickupValid(true)}
-        placeholder={
-          type === "rental"
-            ? "Cidade, aeroporto de Angola..."
-            : "Ponto de partida"
-        }
-        className="flex-grow min-w-0"
-        inputClassName="bg-white h-11 lg:h-13 border border-gray-300"
-        showMap={type === "transfer"}
-      />
-
-      {type === "transfer" && (
+      <div className="flex-grow flex flex-col lg:flex-row gap-3 lg:gap-4 min-w-0">
         <LocationAutocomplete
-          label="Para onde?"
-          icon={MapPin}
-          color="text-red-600"
-          value={dropoff}
+          label={type === "rental" ? "Local de retirada" : "De onde?"}
+          icon={type === "rental" ? undefined : MapPin}
+          color={type === "transfer" ? "text-green-600" : "text-gray-600"}
+          value={pickup}
           onChange={(v) => {
-            setDropoff(v);
-            setIsDropoffValid(false);
+            setPickup(v);
+            setIsPickupValid(false);
           }}
-          onSelect={() => setIsDropoffValid(true)}
-          placeholder="Ponto de destino"
-          className="flex-grow min-w-0"
+          onSelect={() => setIsPickupValid(true)}
+          placeholder={
+            type === "rental"
+              ? "Cidade, aeroporto de Angola..."
+              : "Ponto de partida"
+          }
+          className="flex-grow min-w-0 w-full"
           inputClassName="bg-white h-11 lg:h-13 border border-gray-300"
-          showMap={true}
+          showMap={type === "transfer"}
         />
-      )}
 
-      <DateInput
-        label={type === "rental" ? "Data de retirada" : "Quando?"}
-        value={date1}
-        onChange={(d: Date) => {
-          setDate1(d);
-          if (date2 < d) setDate2(d);
-        }}
-        disabled={(d: Date) => {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          return d < today;
-        }}
-      />
-
-      <TimePicker
-        value={time1}
-        onChange={setTime1}
-        label="Hora"
-        className="w-full lg:w-[110px] border border-gray-300 rounded-none"
-      />
-
-      {type === "rental" && (
-        <>
-          <DateInput
-            label="Data de devolução"
-            value={date2}
-            onChange={setDate2}
-            disabled={(d: Date) => {
-              const d1 = date1 ? new Date(date1) : new Date();
-              d1.setHours(0, 0, 0, 0);
-              return d < d1;
+        {type === "transfer" && (
+          <LocationAutocomplete
+            label="Para onde?"
+            icon={MapPin}
+            color="text-red-600"
+            value={dropoff}
+            onChange={(v) => {
+              setDropoff(v);
+              setIsDropoffValid(false);
             }}
+            onSelect={() => setIsDropoffValid(true)}
+            placeholder="Ponto de destino"
+            className="flex-grow min-w-0 w-full"
+            inputClassName="bg-white h-11 lg:h-13 border border-gray-300"
+            showMap={true}
           />
-          <TimePicker
-            value={time2}
-            onChange={setTime2}
-            label="Hora"
-            className="w-full lg:w-[110px] border border-gray-300"
-          />
-        </>
-      )}
+        )}
+      </div>
 
-      {type === "transfer" && (
-        <>
-          <NumberInput
-            label="Passageiros"
-            value={passengers}
-            onChange={setPassengers}
-            icon={Users}
-            min={1}
-            max={8}
+      <div className="flex flex-col sm:flex-row gap-3 lg:gap-4 w-full lg:w-auto">
+        <div className="flex-1 flex gap-2 lg:gap-4 min-w-0">
+          <div className="flex-grow min-w-0">
+            <DateInput
+              label={type === "rental" ? "Data de retirada" : "Quando?"}
+              value={date1}
+              onChange={(d: Date) => {
+                setDate1(d);
+                if (date2 < d) setDate2(d);
+              }}
+              disabled={(d: Date) => {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                return d < today;
+              }}
+            />
+          </div>
+
+          <TimePicker
+            value={time1}
+            onChange={setTime1}
+            label="Hora"
+            className="w-[100px] lg:w-[110px] border border-gray-300 rounded-none h-11 lg:h-13"
           />
-          <NumberInput
-            label="Malas"
-            value={luggage}
-            onChange={setLuggage}
-            icon={Briefcase}
-            min={0}
-            max={6}
-          />
-        </>
-      )}
+        </div>
+
+        {type === "rental" && (
+          <div className="flex-1 flex gap-2 lg:gap-4 min-w-0">
+            <div className="flex-grow min-w-0">
+              <DateInput
+                label="Data de devolução"
+                value={date2}
+                onChange={setDate2}
+                disabled={(d: Date) => {
+                  const d1 = date1 ? new Date(date1) : new Date();
+                  d1.setHours(0, 0, 0, 0);
+                  return d < d1;
+                }}
+              />
+            </div>
+            <TimePicker
+              value={time2}
+              onChange={setTime2}
+              label="Hora"
+              className="w-[100px] lg:w-[110px] border border-gray-300 h-11 lg:h-13"
+            />
+          </div>
+        )}
+
+        {type === "transfer" && (
+          <div className="flex gap-2 lg:gap-4">
+            <NumberInput
+              label="Passageiros"
+              value={passengers}
+              onChange={setPassengers}
+              icon={Users}
+              min={1}
+              max={8}
+            />
+            <NumberInput
+              label="Malas"
+              value={luggage}
+              onChange={setLuggage}
+              icon={Briefcase}
+              min={0}
+              max={6}
+            />
+          </div>
+        )}
+      </div>
 
       <Button
         onClick={() => handleSearch(false)}
         loading={isLoading}
-        className="h-11 lg:h-13 px-8 bg-[#008009] hover:bg-[#006607] text-white font-bold rounded-none border border-gray-300 transition-transform hover:scale-[1.02] flex-shrink-0"
+        className="w-full lg:w-auto h-11 lg:h-13 px-8 bg-[#008009] hover:bg-[#006607] text-white font-bold rounded-none border border-gray-300 transition-transform hover:scale-[1.02] flex-shrink-0"
       >
         Pesquisar
       </Button>

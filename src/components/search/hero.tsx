@@ -29,7 +29,7 @@ export function SearchHero({ title, children, checkboxes }: SearchHeroProps) {
   return (
     <MotionSection
       {...animProps}
-      className="relative min-h-[550px] md:min-h-[600px] flex items-start justify-center pt-32 md:pt-40 pb-16 md:pb-20 overflow-hidden bg-gradient-to-b from-[#003580] via-[#1a73e8] to-[#42a5f5]"
+      className="relative min-h-[480px] md:min-h-[600px] flex items-start justify-center pt-24 md:pt-40 pb-12 md:pb-20 overflow-hidden bg-gradient-to-b from-[#003580] via-[#1a73e8] to-[#42a5f5]"
     >
       {/* Hero Background with Overlay */}
       <div className="absolute inset-0 z-0">
@@ -45,9 +45,9 @@ export function SearchHero({ title, children, checkboxes }: SearchHeroProps) {
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-[#003580]/20 to-transparent" />
       </div>
 
-      <div className="container mx-auto px-1 sm:px-4 relative z-10 text-white w-full">
+      <div className="container mx-auto px-4 md:px-6 relative z-10 text-white w-full">
         <div className="max-w-[1400px] mx-auto">
-          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 leading-tight text-center md:text-left drop-shadow-lg">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold mb-4 leading-[1.1] text-center md:text-left drop-shadow-lg max-w-3xl">
             {title}
           </h1>
 
